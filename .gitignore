@@ -1,0 +1,24 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Local model artifacts
+local_model/
+*.tar.gz
+
+# AWS credentials (never commit)
+aws_credentials.yaml
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
