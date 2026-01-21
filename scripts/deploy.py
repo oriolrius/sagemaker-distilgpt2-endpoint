@@ -7,9 +7,7 @@ Downloads model from Hugging Face, packages with inference code, and deploys.
 import os
 import tarfile
 import tempfile
-import shutil
 import boto3
-import sagemaker
 from datetime import datetime
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
@@ -22,30 +20,53 @@ INSTANCE_TYPE = "ml.m5.large"
 CONTAINER_IMAGE = "763104351884.dkr.ecr.eu-north-1.amazonaws.com/pytorch-inference:2.0.1-cpu-py310"
 
 
+def get_account_id():
+    """Get AWS account ID"""
+    sts = boto3.client('sts', region_name=REGION)
+    return sts.get_caller_identity()['Account']
+
+
+def get_default_bucket():
+    """Get or create the default SageMaker bucket"""
+    account_id = get_account_id()
+    bucket_name = f"sagemaker-{REGION}-{account_id}"
+
+    s3 = boto3.client('s3', region_name=REGION)
+
+    # Check if bucket exists, create if not
+    try:
+        s3.head_bucket(Bucket=bucket_name)
+    except s3.exceptions.ClientError:
+        print(f"Creating bucket: {bucket_name}")
+        if REGION == 'us-east-1':
+            s3.create_bucket(Bucket=bucket_name)
+        else:
+            s3.create_bucket(
+                Bucket=bucket_name,
+                CreateBucketConfiguration={'LocationConstraint': REGION}
+            )
+
+    return bucket_name
+
+
 def get_role_arn():
     """Get SageMaker execution role ARN"""
     iam = boto3.client('iam', region_name=REGION)
 
-    # Try common SageMaker role names
-    role_names = [
-        "AmazonSageMakerAdminIAMExecutionRole",
-        "SageMakerExecutionRole",
-        "AmazonSageMaker-ExecutionRole"
+    # Try common SageMaker role names (check service-role path first)
+    role_patterns = [
+        ("service-role", "AmazonSageMakerAdminIAMExecutionRole"),
+        ("service-role", "AmazonSageMaker-ExecutionRole"),
+        ("", "SageMakerExecutionRole"),
+        ("", "AmazonSageMaker-ExecutionRole"),
     ]
 
-    for role_name in role_names:
+    for path_prefix, role_name in role_patterns:
         try:
             response = iam.get_role(RoleName=role_name)
             return response['Role']['Arn']
         except iam.exceptions.NoSuchEntityException:
             continue
-
-    # If no standard role found, try to get from SageMaker session
-    try:
-        session = sagemaker.Session()
-        return sagemaker.get_execution_role(sagemaker_session=session)
-    except Exception:
-        pass
 
     raise RuntimeError("Could not find SageMaker execution role. Set SAGEMAKER_ROLE_ARN environment variable.")
 
@@ -137,8 +158,8 @@ def main():
     print(f"Using role: {role_arn}")
 
     # Get S3 bucket
-    session = sagemaker.Session()
-    bucket = session.default_bucket()
+    bucket = get_default_bucket()
+    print(f"Using bucket: {bucket}")
 
     # Get code directory (relative to this script)
     script_dir = os.path.dirname(os.path.abspath(__file__))
