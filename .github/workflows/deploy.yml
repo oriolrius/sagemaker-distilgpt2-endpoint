@@ -31,7 +31,7 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install boto3 transformers
+        run: pip install boto3 transformers torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Package and deploy model
         id: deploy
