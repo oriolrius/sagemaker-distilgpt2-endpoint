@@ -1,6 +1,6 @@
 [project]
 name = "sagemaker-distilgpt2"
-version = "0.1.0"
+version = "1.0.0"
 description = "Deploy and test a DistilGPT-2 language model on AWS SageMaker"
 dependencies = [
     "boto3>=1.34.0",
@@ -22,7 +22,7 @@ dev = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.0"
+version = "1.0.0"
 version_files = [
     "pyproject.toml:^version"
 ]
