@@ -37,12 +37,12 @@ jobs:
         id: deploy
         run: |
           python scripts/deploy.py
-          # Get the endpoint name from the most recent deployment
+          # Get the endpoint name from the most recent deployment (first field only)
           ENDPOINT=$(aws sagemaker list-endpoints \
             --sort-by CreationTime \
             --sort-order Descending \
-            --query "Endpoints[?contains(EndpointName, 'distilgpt2')].EndpointName" \
-            --output text | head -1)
+            --query "Endpoints[?contains(EndpointName, 'distilgpt2')].EndpointName | [0]" \
+            --output text)
           echo "endpoint_name=$ENDPOINT" >> $GITHUB_OUTPUT
 
       - name: Wait for endpoint
