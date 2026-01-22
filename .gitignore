@@ -22,3 +22,6 @@ aws_credentials.yaml
 .idea/
 .vscode/
 *.swp
+
+# OpenWebUI secrets
+openwebui/.env

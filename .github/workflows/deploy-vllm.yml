@@ -1,0 +1,75 @@
+name: Deploy vLLM SageMaker Endpoint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/deploy_vllm.py'
+      - 'scripts/test_openai_endpoint.py'
+  workflow_dispatch:
+    inputs:
+      model_id:
+        description: 'HuggingFace Model ID'
+        required: false
+        default: 'distilgpt2'
+      instance_type:
+        description: 'Instance Type'
+        required: false
+        default: 'ml.g4dn.xlarge'
+
+env:
+  AWS_REGION: eu-north-1
+  HF_MODEL_ID: ${{ github.event.inputs.model_id || 'distilgpt2' }}
+  INSTANCE_TYPE: ${{ github.event.inputs.instance_type || 'ml.g4dn.xlarge' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45  # GPU endpoints can take longer to initialize
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install boto3
+
+      - name: Deploy vLLM endpoint
+        id: deploy
+        run: |
+          python scripts/deploy_vllm.py
+          ENDPOINT=$(aws sagemaker list-endpoints \
+            --sort-by CreationTime \
+            --sort-order Descending \
+            --query "Endpoints[?contains(EndpointName, 'vllm')].EndpointName | [0]" \
+            --output text)
+          echo "endpoint_name=$ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Wait for endpoint (up to 30 minutes)
+        run: |
+          echo "Waiting for endpoint: ${{ steps.deploy.outputs.endpoint_name }}"
+          timeout 1800 aws sagemaker wait endpoint-in-service \
+            --endpoint-name ${{ steps.deploy.outputs.endpoint_name }}
+
+      - name: Test OpenAI-compatible endpoint
+        run: |
+          python scripts/test_openai_endpoint.py ${{ steps.deploy.outputs.endpoint_name }}
+
+      - name: Output endpoint info
+        run: |
+          echo "Endpoint deployed successfully!"
+          echo "Endpoint name: ${{ steps.deploy.outputs.endpoint_name }}"
+          echo ""
+          echo "Test with OpenAI format:"
+          echo '  {"messages": [{"role": "user", "content": "Hello"}], "max_tokens": 100}'
