@@ -9,6 +9,11 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+uv.lock
+.pytest_cache/
+
+# Build artifacts
+.build/
 
 # AWS credentials (never commit)
 aws_credentials.yaml

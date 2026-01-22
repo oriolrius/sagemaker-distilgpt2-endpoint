@@ -2,28 +2,17 @@
 
 CloudFormation templates for deploying the SageMaker vLLM endpoint with OpenAI-compatible API.
 
-## Options
-
-### Option 1: Full Stack (Recommended)
+## Full Stack Deployment
 
 Deploys everything in one CloudFormation stack:
 - SageMaker vLLM endpoint
 - API Gateway + Lambda proxy
 - EC2 instance (t3a.small) with OpenWebUI
+- S3 bucket for Lambda deployment artifacts
 
 ```bash
 ./deploy-full-stack.sh --vpc-id vpc-xxx --subnet-id subnet-xxx
 ```
-
-### Option 2: API Gateway Only
-
-Deploys just the API Gateway + Lambda (assumes SageMaker endpoint already exists):
-
-```bash
-./deploy.sh [endpoint-name]
-```
-
-## Full Stack Deployment
 
 ### Architecture
 
@@ -42,6 +31,7 @@ Deploys just the API Gateway + Lambda (assumes SageMaker endpoint already exists
 1. **AWS CLI configured** with credentials
 2. **VPC and Subnet IDs** - Need a VPC with a public subnet
 3. **GPU quota** - ml.g4dn.xlarge requires quota (check Service Quotas)
+4. **uv** - Python package manager for Lambda packaging ([install](https://github.com/astral-sh/uv))
 
 ### Find VPC and Subnet
 
@@ -76,6 +66,7 @@ aws ec2 describe-subnets --region eu-north-1 \
 | `--region` | AWS region | eu-north-1 |
 | `--sagemaker-instance` | SageMaker instance type | ml.g4dn.xlarge |
 | `--ec2-instance` | EC2 instance type | t3a.small |
+| `--lambda-s3-bucket` | S3 bucket for Lambda code | Auto-created |
 
 ### Outputs
 
@@ -87,7 +78,11 @@ After deployment:
 ### Cleanup
 
 ```bash
+# Delete stack and S3 bucket
 ./delete-full-stack.sh --stack-name openai-sagemaker-stack
+
+# Keep S3 bucket for faster redeployment
+./delete-full-stack.sh --stack-name openai-sagemaker-stack --keep-s3
 ```
 
 ## Cost Estimate
@@ -107,11 +102,9 @@ After deployment:
 | File | Description |
 |------|-------------|
 | `full-stack.yaml` | Complete stack CloudFormation |
-| `deploy-full-stack.sh` | Deploy complete stack |
-| `delete-full-stack.sh` | Delete complete stack |
-| `api-gateway-lambda.yaml` | API Gateway + Lambda only |
-| `deploy.sh` | Deploy API Gateway only |
-| `delete.sh` | Delete API Gateway only |
+| `deploy-full-stack.sh` | Deploy script (packages Lambda, uploads to S3, deploys CF) |
+| `delete-full-stack.sh` | Cleanup script (deletes stack and S3 bucket) |
+| `../lambda/openai-proxy/` | Lambda function source code |
 
 ## Security Notes
 

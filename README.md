@@ -30,6 +30,7 @@ Deploy a HuggingFace model on AWS SageMaker with vLLM, exposed via an OpenAI-com
 - AWS CLI configured with credentials
 - VPC with a public subnet
 - GPU quota for ml.g4dn.xlarge (check Service Quotas)
+- [uv](https://github.com/astral-sh/uv) (Python package manager) for Lambda packaging
 
 ### Deploy
 
@@ -135,12 +136,44 @@ For production, add API Gateway authentication and enable OpenWebUI auth.
 
 ```
 .
+├── lambda/
+│   └── openai-proxy/            # Lambda function source
+│       ├── pyproject.toml       # Python project config (uv)
+│       ├── src/
+│       │   ├── index.py         # Lambda entry point
+│       │   └── openai_proxy/    # Main module
+│       │       ├── __init__.py
+│       │       └── handler.py   # Request handlers
+│       └── tests/               # Unit tests
+│           └── test_handler.py
 ├── infra/
 │   ├── full-stack.yaml          # CloudFormation template
 │   ├── deploy-full-stack.sh     # Deployment script
 │   ├── delete-full-stack.sh     # Cleanup script
 │   └── README.md                # Detailed documentation
 └── README.md                    # This file
+```
+
+## Development
+
+### Lambda Function
+
+The Lambda function is located in `lambda/openai-proxy/` with a proper Python project structure for easy development and testing.
+
+```bash
+cd lambda/openai-proxy
+
+# Setup virtual environment
+uv sync --dev
+
+# Run tests
+uv run pytest
+
+# Run tests with coverage
+uv run pytest --cov=openai_proxy
+
+# Lint code
+uv run ruff check src/ tests/
 ```
 
 ## License

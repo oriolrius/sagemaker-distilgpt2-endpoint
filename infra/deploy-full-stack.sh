@@ -13,6 +13,10 @@
 #   --model-id      HuggingFace model ID (default: distilgpt2)
 #   --key-pair      EC2 Key Pair name for SSH access
 #   --region        AWS region (default: eu-north-1)
+#
+# Prerequisites:
+#   - AWS CLI configured with credentials
+#   - uv (Python package manager) installed
 
 set -e
 
@@ -25,6 +29,7 @@ EC2_INSTANCE="t3a.small"
 KEY_PAIR=""
 VPC_ID=""
 SUBNET_ID=""
+LAMBDA_S3_BUCKET=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -61,6 +66,10 @@ while [[ $# -gt 0 ]]; do
             EC2_INSTANCE="$2"
             shift 2
             ;;
+        --lambda-s3-bucket)
+            LAMBDA_S3_BUCKET="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 --vpc-id vpc-xxx --subnet-id subnet-xxx [options]"
             echo ""
@@ -75,6 +84,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --region              AWS region (default: eu-north-1)"
             echo "  --sagemaker-instance  SageMaker instance (default: ml.g4dn.xlarge)"
             echo "  --ec2-instance        EC2 instance (default: t3a.small)"
+            echo "  --lambda-s3-bucket    S3 bucket for Lambda code (auto-created if not specified)"
             exit 0
             ;;
         *)
@@ -130,12 +140,83 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 1
 fi
 
-# Build parameters
+#############################################
+# Package Lambda Function
+#############################################
+echo ""
+echo "Packaging Lambda function..."
+
+LAMBDA_DIR="$SCRIPT_DIR/../lambda/openai-proxy"
+BUILD_DIR="$SCRIPT_DIR/../.build"
+LAMBDA_ZIP="lambda-openai-proxy.zip"
+LAMBDA_S3_KEY="lambda/$STACK_NAME/$LAMBDA_ZIP"
+
+# Clean and create build directory
+rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR/package"
+
+# Install dependencies using uv (boto3 is included in Lambda runtime, but install anyway for consistency)
+echo "Installing Lambda dependencies..."
+if command -v uv &> /dev/null; then
+    uv pip install --target "$BUILD_DIR/package" boto3 --quiet
+else
+    pip install --target "$BUILD_DIR/package" boto3 --quiet
+fi
+
+# Copy source code
+cp -r "$LAMBDA_DIR/src/"* "$BUILD_DIR/package/"
+
+# Create zip file
+echo "Creating Lambda deployment package..."
+cd "$BUILD_DIR/package"
+zip -r "../$LAMBDA_ZIP" . -q
+cd "$SCRIPT_DIR"
+
+echo "Lambda package created: $BUILD_DIR/$LAMBDA_ZIP"
+
+#############################################
+# Create/Verify S3 Bucket for Lambda
+#############################################
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+if [ -z "$LAMBDA_S3_BUCKET" ]; then
+    LAMBDA_S3_BUCKET="${STACK_NAME}-lambda-${AWS_ACCOUNT_ID}-${REGION}"
+fi
+
+echo ""
+echo "Using S3 bucket: $LAMBDA_S3_BUCKET"
+
+# Create bucket if it doesn't exist
+if ! aws s3api head-bucket --bucket "$LAMBDA_S3_BUCKET" --region "$REGION" 2>/dev/null; then
+    echo "Creating S3 bucket for Lambda artifacts..."
+    if [ "$REGION" = "us-east-1" ]; then
+        aws s3api create-bucket \
+            --bucket "$LAMBDA_S3_BUCKET" \
+            --region "$REGION"
+    else
+        aws s3api create-bucket \
+            --bucket "$LAMBDA_S3_BUCKET" \
+            --region "$REGION" \
+            --create-bucket-configuration LocationConstraint="$REGION"
+    fi
+fi
+
+# Upload Lambda package to S3
+echo "Uploading Lambda package to S3..."
+aws s3 cp "$BUILD_DIR/$LAMBDA_ZIP" "s3://$LAMBDA_S3_BUCKET/$LAMBDA_S3_KEY" --region "$REGION"
+
+echo "Lambda uploaded to: s3://$LAMBDA_S3_BUCKET/$LAMBDA_S3_KEY"
+
+#############################################
+# Build CloudFormation Parameters
+#############################################
 PARAMS="ParameterKey=HuggingFaceModelId,ParameterValue=$MODEL_ID"
 PARAMS="$PARAMS ParameterKey=SageMakerInstanceType,ParameterValue=$SAGEMAKER_INSTANCE"
 PARAMS="$PARAMS ParameterKey=EC2InstanceType,ParameterValue=$EC2_INSTANCE"
 PARAMS="$PARAMS ParameterKey=VpcId,ParameterValue=$VPC_ID"
 PARAMS="$PARAMS ParameterKey=SubnetId,ParameterValue=$SUBNET_ID"
+PARAMS="$PARAMS ParameterKey=LambdaS3Bucket,ParameterValue=$LAMBDA_S3_BUCKET"
+PARAMS="$PARAMS ParameterKey=LambdaS3Key,ParameterValue=$LAMBDA_S3_KEY"
 
 if [ -n "$KEY_PAIR" ]; then
     PARAMS="$PARAMS ParameterKey=EC2KeyPair,ParameterValue=$KEY_PAIR"

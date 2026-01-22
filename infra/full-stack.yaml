@@ -20,6 +20,15 @@ Parameters:
       - ml.g5.xlarge
       - ml.g5.2xlarge
 
+  # Lambda Configuration
+  LambdaS3Bucket:
+    Type: String
+    Description: S3 bucket containing Lambda deployment package
+
+  LambdaS3Key:
+    Type: String
+    Description: S3 key for Lambda deployment package
+
   # EC2 Configuration
   EC2InstanceType:
     Type: String
@@ -57,6 +66,11 @@ Metadata:
         Parameters:
           - HuggingFaceModelId
           - SageMakerInstanceType
+      - Label:
+          default: Lambda Configuration
+        Parameters:
+          - LambdaS3Bucket
+          - LambdaS3Key
       - Label:
           default: EC2 Configuration
         Parameters:
@@ -179,89 +193,8 @@ Resources:
           SAGEMAKER_ENDPOINT_NAME: !Sub '${AWS::StackName}-vllm-endpoint'
           AWS_REGION_NAME: !Ref AWS::Region
       Code:
-        ZipFile: |
-          import json
-          import os
-          import boto3
-
-          SAGEMAKER_ENDPOINT_NAME = os.environ.get('SAGEMAKER_ENDPOINT_NAME')
-          AWS_REGION = os.environ.get('AWS_REGION', 'eu-north-1')
-          sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=AWS_REGION)
-
-          def lambda_handler(event, context):
-              http_method = event.get('requestContext', {}).get('http', {}).get('method', 'POST')
-              path = event.get('rawPath', '/')
-
-              # GET /v1/models
-              if http_method == 'GET' and '/models' in path:
-                  return {
-                      'statusCode': 200,
-                      'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-                      'body': json.dumps({
-                          'object': 'list',
-                          'data': [{'id': SAGEMAKER_ENDPOINT_NAME, 'object': 'model', 'created': 1677610602, 'owned_by': 'sagemaker'}]
-                      })
-                  }
-
-              # OPTIONS (CORS)
-              if http_method == 'OPTIONS':
-                  return {
-                      'statusCode': 200,
-                      'headers': {
-                          'Access-Control-Allow-Origin': '*',
-                          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-                      },
-                      'body': ''
-                  }
-
-              # Parse body
-              try:
-                  body = event.get('body', '{}')
-                  if event.get('isBase64Encoded'):
-                      import base64
-                      body = base64.b64decode(body).decode('utf-8')
-                  request_body = json.loads(body)
-              except:
-                  return {'statusCode': 400, 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-                          'body': json.dumps({'error': {'message': 'Invalid JSON', 'type': 'invalid_request_error'}})}
-
-              try:
-                  messages = request_body.get('messages', [])
-                  prompt = '\n'.join([m.get('content', '') for m in messages])
-
-                  sagemaker_payload = {
-                      'inputs': prompt,
-                      'parameters': {
-                          'max_new_tokens': request_body.get('max_tokens', 100),
-                          'temperature': request_body.get('temperature', 0.7),
-                          'do_sample': True
-                      }
-                  }
-
-                  response = sagemaker_runtime.invoke_endpoint(
-                      EndpointName=SAGEMAKER_ENDPOINT_NAME,
-                      ContentType='application/json',
-                      Body=json.dumps(sagemaker_payload)
-                  )
-
-                  result = json.loads(response['Body'].read().decode('utf-8'))
-                  generated_text = result.get('generated_text', '')
-
-                  return {
-                      'statusCode': 200,
-                      'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-                      'body': json.dumps({
-                          'id': f'chatcmpl-{context.aws_request_id}',
-                          'object': 'chat.completion',
-                          'model': SAGEMAKER_ENDPOINT_NAME,
-                          'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': generated_text}, 'finish_reason': 'stop'}],
-                          'usage': {'prompt_tokens': len(prompt.split()), 'completion_tokens': len(generated_text.split()), 'total_tokens': len(prompt.split()) + len(generated_text.split())}
-                      })
-                  }
-              except Exception as e:
-                  return {'statusCode': 500, 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-                          'body': json.dumps({'error': {'message': str(e), 'type': 'server_error'}})}
+        S3Bucket: !Ref LambdaS3Bucket
+        S3Key: !Ref LambdaS3Key
 
   #############################################
   # API Gateway Resources
