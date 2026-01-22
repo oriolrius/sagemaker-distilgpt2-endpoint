@@ -7,12 +7,40 @@ Local development/testing setup for OpenWebUI connected to your SageMaker vLLM e
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────────┐
 │  OpenWebUI  │────▶│   LiteLLM   │────▶│ SageMaker vLLM   │
-│  :49200      │     │   :49201     │     │ Endpoint         │
+│  :49200     │     │   :49201    │     │ Endpoint         │
 └─────────────┘     └─────────────┘     └──────────────────┘
-                    (SigV4 signing)
+   (OpenAI API)     (SigV4 signing)       (AWS API)
 ```
 
-LiteLLM handles AWS SigV4 authentication required by SageMaker endpoints.
+### Why LiteLLM in the middle?
+
+**OpenWebUI can't talk directly to SageMaker** because:
+
+1. **AWS SigV4 Authentication**: SageMaker endpoints require every request to be signed with [AWS Signature Version 4](https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html) - a complex signing process using your AWS credentials (access key, secret key, session token, region, timestamp). OpenWebUI only supports simple Bearer token authentication.
+
+2. **API Translation**: OpenWebUI speaks OpenAI's API format. While our vLLM endpoint is OpenAI-compatible, the request must still go through SageMaker's `invoke_endpoint` API, not a direct HTTP call.
+
+**LiteLLM solves both problems**:
+- Receives standard OpenAI API requests from OpenWebUI (with a simple API key)
+- Signs requests with AWS credentials (SigV4)
+- Routes them to the correct SageMaker endpoint
+- Returns responses in OpenAI format
+
+```
+OpenWebUI                    LiteLLM                         SageMaker
+   │                            │                                │
+   │  POST /v1/chat/completions │                                │
+   │  Authorization: Bearer sk-1234                              │
+   │ ─────────────────────────► │                                │
+   │                            │  POST /endpoints/vllm.../invocations
+   │                            │  Authorization: AWS4-HMAC-SHA256...
+   │                            │  X-Amz-Date: 20260122T...
+   │                            │  X-Amz-Security-Token: ...
+   │                            │ ─────────────────────────────► │
+   │                            │                                │
+   │                            │ ◄───────────────────────────── │
+   │ ◄───────────────────────── │                                │
+```
 
 ## Prerequisites
 
