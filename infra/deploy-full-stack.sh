@@ -208,6 +208,18 @@ aws s3 cp "$BUILD_DIR/$LAMBDA_ZIP" "s3://$LAMBDA_S3_BUCKET/$LAMBDA_S3_KEY" --reg
 echo "Lambda uploaded to: s3://$LAMBDA_S3_BUCKET/$LAMBDA_S3_KEY"
 
 #############################################
+# Upload OpenWebUI Files to S3
+#############################################
+OPENWEBUI_DIR="$SCRIPT_DIR/../openwebui"
+
+echo ""
+echo "Uploading OpenWebUI files to S3..."
+aws s3 cp "$OPENWEBUI_DIR/docker-compose.yml" "s3://$LAMBDA_S3_BUCKET/openwebui/docker-compose.yml" --region "$REGION"
+aws s3 cp "$OPENWEBUI_DIR/setup.sh" "s3://$LAMBDA_S3_BUCKET/openwebui/setup.sh" --region "$REGION"
+
+echo "OpenWebUI files uploaded to: s3://$LAMBDA_S3_BUCKET/openwebui/"
+
+#############################################
 # Build CloudFormation Parameters
 #############################################
 PARAMS="ParameterKey=HuggingFaceModelId,ParameterValue=$MODEL_ID"
