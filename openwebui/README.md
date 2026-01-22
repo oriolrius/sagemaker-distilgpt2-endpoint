@@ -7,7 +7,7 @@ Local development/testing setup for OpenWebUI connected to your SageMaker vLLM e
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────────┐
 │  OpenWebUI  │────▶│   LiteLLM   │────▶│ SageMaker vLLM   │
-│  :3000      │     │   :4001     │     │ Endpoint         │
+│  :49200      │     │   :49201     │     │ Endpoint         │
 └─────────────┘     └─────────────┘     └──────────────────┘
                     (SigV4 signing)
 ```
@@ -34,7 +34,7 @@ chmod +x setup_env.sh
 docker compose up -d
 
 # 4. Open OpenWebUI
-open http://localhost:3000
+open http://localhost:49200
 ```
 
 Select model `distilgpt2-sg-vllm` in the UI.
@@ -59,11 +59,11 @@ distilgpt2 is a **base model** (not instruction-tuned), which means:
 
 ```bash
 # List available models
-curl -s http://localhost:4001/v1/models \
+curl -s http://localhost:49201/v1/models \
   -H "Authorization: Bearer sk-1234" | jq '.data[].id'
 
 # Test completion (statement format - works best)
-curl -s http://localhost:4001/v1/chat/completions \
+curl -s http://localhost:49201/v1/chat/completions \
   -H "Authorization: Bearer sk-1234" \
   -H "Content-Type: application/json" \
   -d '{
@@ -73,7 +73,7 @@ curl -s http://localhost:4001/v1/chat/completions \
   }' | jq -r '.choices[0].message.content'
 
 # Test Q&A format
-curl -s http://localhost:4001/v1/chat/completions \
+curl -s http://localhost:49201/v1/chat/completions \
   -H "Authorization: Bearer sk-1234" \
   -H "Content-Type: application/json" \
   -d '{
@@ -148,7 +148,7 @@ docker compose logs openwebui --tail 50
 
 ### Test LiteLLM health
 ```bash
-curl http://localhost:4001/health
+curl http://localhost:49201/health
 ```
 
 ### AWS credentials expired
@@ -165,7 +165,7 @@ docker compose restart litellm
 ### Port 4001 already in use
 ```bash
 # Find what's using the port
-lsof -i :4001
+lsof -i :49201
 # Or change the port in docker-compose.yml
 ```
 
@@ -181,7 +181,7 @@ docker compose down -v
 
 ## Notes
 
-- **Ports**: OpenWebUI on `:3000`, LiteLLM on `:4001`
+- **Ports**: OpenWebUI on `:49200`, LiteLLM on `:49201`
 - **Authentication**: OpenWebUI auth is disabled (`WEBUI_AUTH=false`) for local dev
 - **Session tokens**: AWS session tokens expire (typically 1-12 hours). Re-run `setup_env.sh` when they do.
 - **Model quality**: distilgpt2 is a small 82M parameter model. For better responses, deploy a larger instruction-tuned model.
