@@ -1,0 +1,475 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Full stack deployment: SageMaker vLLM endpoint + API Gateway + Lambda + OpenWebUI on EC2.
+  Deploys an OpenAI-compatible API backed by a SageMaker endpoint running vLLM.
+
+Parameters:
+  # Model Configuration
+  HuggingFaceModelId:
+    Type: String
+    Default: distilgpt2
+    Description: HuggingFace model ID to deploy
+
+  SageMakerInstanceType:
+    Type: String
+    Default: ml.g4dn.xlarge
+    Description: SageMaker endpoint instance type (must be GPU for vLLM)
+    AllowedValues:
+      - ml.g4dn.xlarge
+      - ml.g4dn.2xlarge
+      - ml.g5.xlarge
+      - ml.g5.2xlarge
+
+  # EC2 Configuration
+  EC2InstanceType:
+    Type: String
+    Default: t3a.small
+    Description: EC2 instance type for OpenWebUI
+    AllowedValues:
+      - t3a.micro
+      - t3a.small
+      - t3a.medium
+
+  EC2KeyPair:
+    Type: String
+    Default: ''
+    Description: EC2 Key Pair name for SSH access (optional)
+
+  # Network Configuration
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for EC2 instance
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet ID for EC2 instance (must be public subnet)
+
+  AllowedSSHCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR block allowed for SSH access
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Model Configuration
+        Parameters:
+          - HuggingFaceModelId
+          - SageMakerInstanceType
+      - Label:
+          default: EC2 Configuration
+        Parameters:
+          - EC2InstanceType
+          - EC2KeyPair
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VpcId
+          - SubnetId
+          - AllowedSSHCidr
+
+Conditions:
+  HasKeyPair: !Not [!Equals [!Ref EC2KeyPair, '']]
+
+Resources:
+  #############################################
+  # SageMaker Resources
+  #############################################
+
+  SageMakerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-sagemaker-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sagemaker.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+      Policies:
+        - PolicyName: ECRAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+
+  SageMakerModel:
+    Type: AWS::SageMaker::Model
+    Properties:
+      ModelName: !Sub '${AWS::StackName}-vllm-model'
+      ExecutionRoleArn: !GetAtt SageMakerExecutionRole.Arn
+      PrimaryContainer:
+        Image: !Sub '763104351884.dkr.ecr.${AWS::Region}.amazonaws.com/djl-inference:0.28.0-lmi10.0.0-cu124'
+        Environment:
+          HF_MODEL_ID: !Ref HuggingFaceModelId
+          OPTION_ROLLING_BATCH: vllm
+          OPTION_DTYPE: fp16
+          OPTION_MAX_MODEL_LEN: '1024'
+          OPTION_TENSOR_PARALLEL_DEGREE: '1'
+          OPTION_GPU_MEMORY_UTILIZATION: '0.9'
+          OPTION_MODEL_LOADING_TIMEOUT: '1800'
+
+  SageMakerEndpointConfig:
+    Type: AWS::SageMaker::EndpointConfig
+    Properties:
+      EndpointConfigName: !Sub '${AWS::StackName}-vllm-config'
+      ProductionVariants:
+        - VariantName: primary
+          ModelName: !GetAtt SageMakerModel.ModelName
+          InitialInstanceCount: 1
+          InstanceType: !Ref SageMakerInstanceType
+          InitialVariantWeight: 1.0
+          ContainerStartupHealthCheckTimeoutInSeconds: 900
+
+  SageMakerEndpoint:
+    Type: AWS::SageMaker::Endpoint
+    Properties:
+      EndpointName: !Sub '${AWS::StackName}-vllm-endpoint'
+      EndpointConfigName: !GetAtt SageMakerEndpointConfig.EndpointConfigName
+
+  #############################################
+  # Lambda Resources
+  #############################################
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SageMakerInvokePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sagemaker:InvokeEndpoint
+                Resource: !Sub 'arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${AWS::StackName}-vllm-endpoint'
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: SageMakerEndpoint
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-openai-proxy'
+      Runtime: python3.11
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          SAGEMAKER_ENDPOINT_NAME: !Sub '${AWS::StackName}-vllm-endpoint'
+          AWS_REGION_NAME: !Ref AWS::Region
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+
+          SAGEMAKER_ENDPOINT_NAME = os.environ.get('SAGEMAKER_ENDPOINT_NAME')
+          AWS_REGION = os.environ.get('AWS_REGION', 'eu-north-1')
+          sagemaker_runtime = boto3.client('sagemaker-runtime', region_name=AWS_REGION)
+
+          def lambda_handler(event, context):
+              http_method = event.get('requestContext', {}).get('http', {}).get('method', 'POST')
+              path = event.get('rawPath', '/')
+
+              # GET /v1/models
+              if http_method == 'GET' and '/models' in path:
+                  return {
+                      'statusCode': 200,
+                      'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                      'body': json.dumps({
+                          'object': 'list',
+                          'data': [{'id': SAGEMAKER_ENDPOINT_NAME, 'object': 'model', 'created': 1677610602, 'owned_by': 'sagemaker'}]
+                      })
+                  }
+
+              # OPTIONS (CORS)
+              if http_method == 'OPTIONS':
+                  return {
+                      'statusCode': 200,
+                      'headers': {
+                          'Access-Control-Allow-Origin': '*',
+                          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+                          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+                      },
+                      'body': ''
+                  }
+
+              # Parse body
+              try:
+                  body = event.get('body', '{}')
+                  if event.get('isBase64Encoded'):
+                      import base64
+                      body = base64.b64decode(body).decode('utf-8')
+                  request_body = json.loads(body)
+              except:
+                  return {'statusCode': 400, 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                          'body': json.dumps({'error': {'message': 'Invalid JSON', 'type': 'invalid_request_error'}})}
+
+              try:
+                  messages = request_body.get('messages', [])
+                  prompt = '\n'.join([m.get('content', '') for m in messages])
+
+                  sagemaker_payload = {
+                      'inputs': prompt,
+                      'parameters': {
+                          'max_new_tokens': request_body.get('max_tokens', 100),
+                          'temperature': request_body.get('temperature', 0.7),
+                          'do_sample': True
+                      }
+                  }
+
+                  response = sagemaker_runtime.invoke_endpoint(
+                      EndpointName=SAGEMAKER_ENDPOINT_NAME,
+                      ContentType='application/json',
+                      Body=json.dumps(sagemaker_payload)
+                  )
+
+                  result = json.loads(response['Body'].read().decode('utf-8'))
+                  generated_text = result.get('generated_text', '')
+
+                  return {
+                      'statusCode': 200,
+                      'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                      'body': json.dumps({
+                          'id': f'chatcmpl-{context.aws_request_id}',
+                          'object': 'chat.completion',
+                          'model': SAGEMAKER_ENDPOINT_NAME,
+                          'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': generated_text}, 'finish_reason': 'stop'}],
+                          'usage': {'prompt_tokens': len(prompt.split()), 'completion_tokens': len(generated_text.split()), 'total_tokens': len(prompt.split()) + len(generated_text.split())}
+                      })
+                  }
+              except Exception as e:
+                  return {'statusCode': 500, 'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                          'body': json.dumps({'error': {'message': str(e), 'type': 'server_error'}})}
+
+  #############################################
+  # API Gateway Resources
+  #############################################
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${AWS::StackName}-api'
+      ProtocolType: HTTP
+      Description: OpenAI-compatible API for SageMaker vLLM endpoint
+      CorsConfiguration:
+        AllowOrigins: ['*']
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [Content-Type, Authorization]
+
+  HttpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: '$default'
+      AutoDeploy: true
+
+  LambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt LambdaFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  ChatCompletionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /v1/chat/completions'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  CompletionsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /v1/completions'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  ModelsRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /v1/models'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  LambdaApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*'
+
+  #############################################
+  # EC2 Resources (OpenWebUI)
+  #############################################
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-openwebui-sg'
+      GroupDescription: Security group for OpenWebUI EC2 instance
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP access
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS access
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedSSHCidr
+          Description: SSH access
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: All outbound traffic
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-ec2-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${AWS::StackName}-ec2-profile'
+      Roles:
+        - !Ref EC2Role
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn: HttpApi
+    Properties:
+      InstanceType: !Ref EC2InstanceType
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      KeyName: !If [HasKeyPair, !Ref EC2KeyPair, !Ref 'AWS::NoValue']
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-openwebui'
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -ex
+
+          # Update system
+          dnf update -y
+          dnf install -y docker git
+
+          # Start Docker
+          systemctl enable docker
+          systemctl start docker
+
+          # Create OpenWebUI directory
+          mkdir -p /opt/openwebui/data
+
+          # Create docker-compose.yml
+          cat > /opt/openwebui/docker-compose.yml << 'COMPOSE'
+          services:
+            openwebui:
+              image: ghcr.io/open-webui/open-webui:main
+              container_name: openwebui
+              ports:
+                - "80:8080"
+              volumes:
+                - ./data:/app/backend/data
+              environment:
+                - OPENAI_API_BASE_URL=${HttpApi.ApiEndpoint}/v1
+                - OPENAI_API_KEY=not-required
+                - WEBUI_AUTH=false
+                - ENABLE_OLLAMA_API=false
+              restart: unless-stopped
+          COMPOSE
+
+          # Install docker-compose
+          curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+
+          # Start OpenWebUI
+          cd /opt/openwebui
+          /usr/local/bin/docker-compose up -d
+
+          # Signal completion
+          echo "OpenWebUI deployment complete" > /var/log/openwebui-setup.log
+
+  EC2ElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref EC2Instance
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-openwebui-eip'
+
+Outputs:
+  SageMakerEndpointName:
+    Description: SageMaker endpoint name
+    Value: !Sub '${AWS::StackName}-vllm-endpoint'
+
+  ApiGatewayEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !GetAtt HttpApi.ApiEndpoint
+
+  OpenWebUIUrl:
+    Description: OpenWebUI URL
+    Value: !Sub 'http://${EC2ElasticIP}'
+
+  EC2InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref EC2Instance
+
+  EC2PublicIP:
+    Description: EC2 Public IP (Elastic IP)
+    Value: !Ref EC2ElasticIP
+
+  TestCurlCommand:
+    Description: Test the API Gateway directly
+    Value: !Sub |
+      curl -X POST ${HttpApi.ApiEndpoint}/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -d '{"messages": [{"role": "user", "content": "The future of AI is"}], "max_tokens": 50}'
+
+  SSHCommand:
+    Description: SSH command to connect to EC2 instance
+    Value: !Sub 'ssh -i <your-key.pem> ec2-user@${EC2ElasticIP}'
