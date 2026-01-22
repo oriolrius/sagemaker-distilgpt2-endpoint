@@ -25,7 +25,7 @@ STACK_NAME="openai-sagemaker-stack"
 MODEL_ID="distilgpt2"
 REGION="${AWS_REGION:-eu-north-1}"
 SAGEMAKER_INSTANCE="ml.g4dn.xlarge"
-EC2_INSTANCE="t3a.small"
+EC2_INSTANCE="t3.small"
 KEY_PAIR=""
 VPC_ID=""
 SUBNET_ID=""
@@ -83,7 +83,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --key-pair            EC2 Key Pair for SSH"
             echo "  --region              AWS region (default: eu-north-1)"
             echo "  --sagemaker-instance  SageMaker instance (default: ml.g4dn.xlarge)"
-            echo "  --ec2-instance        EC2 instance (default: t3a.small)"
+            echo "  --ec2-instance        EC2 instance (default: t3.small)"
             echo "  --lambda-s3-bucket    S3 bucket for Lambda code (auto-created if not specified)"
             exit 0
             ;;

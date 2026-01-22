@@ -14,8 +14,12 @@ This document describes the step-by-step deployment process for the SageMaker vL
 | 6. Upload Files | ~30 sec | Upload Lambda + OpenWebUI files to S3 |
 | 7. Deploy CloudFormation | **15-20 min** | Create all AWS resources |
 | 8. Test Endpoints | ~1 min | Verify API and OpenWebUI work |
+| 9. Cleanup (when done) | ~5-10 min | Delete all resources to stop billing |
+| 10. Verify Cleanup | ~1 min | Confirm all resources are deleted |
 
 **Total deployment time: ~20-25 minutes** (mostly waiting for SageMaker endpoint)
+
+**⚠️ IMPORTANT:** Always run cleanup (Step 9) when you're done testing to avoid ongoing charges (~$0.76/hour).
 
 ---
 
@@ -330,19 +334,153 @@ After successful deployment:
 
 ---
 
-## Cleanup
+## Step 9: Cleanup (Delete All Resources)
 
-To delete all resources and stop billing:
+**Purpose:** Delete all resources to stop billing. **This is critical** - the stack costs ~$0.76/hour.
 
+**What we did:**
 ```bash
 cd infra/
 ./delete-full-stack.sh --stack-name openai-sagemaker-stack --region eu-north-1
 ```
 
-This deletes:
-- SageMaker endpoint, config, and model
-- Lambda function
-- API Gateway
-- EC2 instance and Elastic IP
-- IAM roles
-- S3 bucket (with `--keep-s3` flag to preserve)
+**Resources deleted (in order):**
+1. CloudFormation stack (triggers deletion of all nested resources)
+2. SageMaker endpoint, endpoint config, and model
+3. Lambda function
+4. API Gateway HTTP API
+5. EC2 instance and Elastic IP
+6. Security group
+7. IAM roles and instance profile
+8. S3 bucket and all objects
+
+**Duration:** ~5-10 minutes (SageMaker endpoint deletion is slowest)
+
+**Notes:**
+- Use `--keep-s3` flag if you want to preserve the S3 bucket for faster redeployment
+- The script waits for stack deletion to complete before exiting
+- If deletion fails, check CloudFormation console for stuck resources
+
+---
+
+## Step 10: Verify Cleanup
+
+**Purpose:** Confirm all resources are deleted and no ongoing charges.
+
+**What we did:**
+
+### Verify CloudFormation Stack Deleted
+```bash
+aws cloudformation describe-stacks --region eu-north-1 \
+  --stack-name openai-sagemaker-stack 2>&1 | grep -q "does not exist" && echo "✓ Stack deleted"
+```
+
+### Verify SageMaker Resources Deleted
+```bash
+# Check endpoints
+aws sagemaker list-endpoints --region eu-north-1 \
+  --query 'Endpoints[?contains(EndpointName, `openai-sagemaker-stack`)]'
+
+# Check endpoint configs
+aws sagemaker list-endpoint-configs --region eu-north-1 \
+  --query 'EndpointConfigs[?contains(EndpointConfigName, `openai-sagemaker-stack`)]'
+
+# Check models
+aws sagemaker list-models --region eu-north-1 \
+  --query 'Models[?contains(ModelName, `openai-sagemaker-stack`)]'
+```
+
+**Expected:** Empty arrays `[]` for all queries.
+
+### Verify EC2 Resources Deleted
+```bash
+aws ec2 describe-instances --region eu-north-1 \
+  --filters "Name=tag:Name,Values=*openai-sagemaker-stack*" \
+  --query 'Reservations[*].Instances[?State.Name!=`terminated`].[InstanceId,State.Name]'
+```
+
+**Expected:** Empty array `[]` (or only terminated instances).
+
+### Verify S3 Bucket Deleted
+```bash
+aws s3api head-bucket --bucket openai-sagemaker-stack-lambda-753916465480-eu-north-1 2>&1 \
+  | grep -q "404" && echo "✓ Bucket deleted"
+```
+
+### Verify Lambda Functions Deleted
+```bash
+aws lambda list-functions --region eu-north-1 \
+  --query 'Functions[?contains(FunctionName, `openai-sagemaker-stack`)]'
+```
+
+**Expected:** Empty array `[]`.
+
+### Verify API Gateways Deleted
+```bash
+aws apigatewayv2 get-apis --region eu-north-1 \
+  --query 'Items[?contains(Name, `openai-sagemaker-stack`)]'
+```
+
+**Expected:** Empty array `[]`.
+
+**All resources confirmed deleted = No ongoing charges.**
+
+---
+
+## Quick Reference Commands
+
+### Full Deployment (Automated)
+```bash
+cd infra/
+./deploy-full-stack.sh --vpc-id vpc-xxx --subnet-id subnet-xxx
+```
+
+### Manual Step-by-Step
+```bash
+# 1. Check credentials
+aws sts get-caller-identity
+
+# 2. Package Lambda
+rm -rf .build && mkdir -p .build/package
+uv pip install --target .build/package boto3 --quiet
+cp -r lambda/openai-proxy/src/* .build/package/
+cd .build/package && zip -r ../lambda-openai-proxy.zip . -q && cd -
+
+# 3. Create S3 bucket and upload
+STACK_NAME="openai-sagemaker-stack"
+REGION="eu-north-1"
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+LAMBDA_S3_BUCKET="${STACK_NAME}-lambda-${AWS_ACCOUNT_ID}-${REGION}"
+
+aws s3api create-bucket --bucket "$LAMBDA_S3_BUCKET" --region "$REGION" \
+  --create-bucket-configuration LocationConstraint="$REGION"
+
+aws s3 cp .build/lambda-openai-proxy.zip "s3://$LAMBDA_S3_BUCKET/lambda/$STACK_NAME/lambda-openai-proxy.zip"
+aws s3 cp openwebui/docker-compose.yml "s3://$LAMBDA_S3_BUCKET/openwebui/docker-compose.yml"
+aws s3 cp openwebui/setup.sh "s3://$LAMBDA_S3_BUCKET/openwebui/setup.sh"
+
+# 4. Deploy CloudFormation
+aws cloudformation deploy \
+  --region "$REGION" \
+  --stack-name "$STACK_NAME" \
+  --template-file infra/full-stack.yaml \
+  --parameter-overrides \
+    HuggingFaceModelId="distilgpt2" \
+    SageMakerInstanceType="ml.g4dn.xlarge" \
+    EC2InstanceType="t3.small" \
+    VpcId="vpc-xxx" \
+    SubnetId="subnet-xxx" \
+    LambdaS3Bucket="$LAMBDA_S3_BUCKET" \
+    LambdaS3Key="lambda/$STACK_NAME/lambda-openai-proxy.zip" \
+  --capabilities CAPABILITY_NAMED_IAM
+
+# 5. Get outputs
+aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK_NAME" \
+  --query 'Stacks[0].Outputs' --output table
+```
+
+### Cleanup
+```bash
+cd infra/
+./delete-full-stack.sh --stack-name openai-sagemaker-stack --region eu-north-1
+```

@@ -7,7 +7,7 @@ CloudFormation templates for deploying the SageMaker vLLM endpoint with OpenAI-c
 Deploys everything in one CloudFormation stack:
 - SageMaker vLLM endpoint
 - API Gateway + Lambda proxy
-- EC2 instance (t3a.small) with OpenWebUI
+- EC2 instance (t3.small) with OpenWebUI
 - S3 bucket for Lambda deployment artifacts
 
 ```bash
@@ -65,7 +65,7 @@ aws ec2 describe-subnets --region eu-north-1 \
 | `--key-pair` | EC2 key pair for SSH | - |
 | `--region` | AWS region | eu-north-1 |
 | `--sagemaker-instance` | SageMaker instance type | ml.g4dn.xlarge |
-| `--ec2-instance` | EC2 instance type | t3a.small |
+| `--ec2-instance` | EC2 instance type | t3.small |
 | `--lambda-s3-bucket` | S3 bucket for Lambda code | Auto-created |
 
 ### Outputs
@@ -90,7 +90,7 @@ After deployment:
 | Resource | Type | Cost |
 |----------|------|------|
 | SageMaker | ml.g4dn.xlarge | ~$0.74/hour |
-| EC2 | t3a.small | ~$0.02/hour |
+| EC2 | t3.small | ~$0.02/hour |
 | API Gateway | HTTP API | ~$1/million requests |
 | Lambda | 256MB | Free tier likely covers |
 | Elastic IP | Attached | Free |
