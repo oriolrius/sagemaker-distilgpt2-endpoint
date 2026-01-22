@@ -94,6 +94,23 @@ curl -s http://localhost:4001/v1/chat/completions \
 
 ## Configuration Details
 
+### Why Two Models in OpenWebUI?
+
+You'll see two models (`distilgpt2` and `sagemaker-vllm`) in OpenWebUI, but there's only **one SageMaker endpoint**. This is because LiteLLM defines **model aliases** - multiple names that route to the same backend:
+
+```yaml
+model_list:
+  - model_name: distilgpt2        # Alias 1 → same endpoint
+  - model_name: sagemaker-vllm    # Alias 2 → same endpoint
+```
+
+Both names point to the same `vllm-endpoint-*` in SageMaker. This is useful for:
+- Using friendly names (`distilgpt2`) instead of endpoint IDs
+- Testing different configurations per alias (e.g., different default parameters)
+- Migrating clients gradually when changing endpoints
+
+You can remove one alias from `litellm_config.yaml` if you prefer a single model in the UI.
+
 ### LiteLLM Config (`litellm_config.yaml`)
 
 ```yaml
