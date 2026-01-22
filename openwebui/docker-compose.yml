@@ -1,19 +1,4 @@
 services:
-  litellm:
-    image: ghcr.io/berriai/litellm:main-latest
-    container_name: litellm-proxy
-    ports:
-      - "49201:4000"
-    volumes:
-      - ./litellm_config.yaml:/app/config.yaml
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
-      - AWS_REGION_NAME=${AWS_REGION_NAME:-eu-north-1}
-      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-1234}
-    command: ["--config", "/app/config.yaml", "--port", "4000", "--detailed_debug"]
-
   openwebui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: openwebui
@@ -22,10 +7,9 @@ services:
     volumes:
       - ./data/openwebui:/app/backend/data
     environment:
-      - OPENAI_API_BASE_URL=http://litellm:4000/v1
-      - OPENAI_API_KEY=${LITELLM_MASTER_KEY:-sk-1234}
+      # Connect directly to API Gateway (no LiteLLM needed)
+      - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-https://5wzt9rrir6.execute-api.eu-north-1.amazonaws.com/v1}
+      - OPENAI_API_KEY=not-required
       - WEBUI_AUTH=false
       - ENABLE_OLLAMA_API=false
-    depends_on:
-      - litellm
     restart: unless-stopped

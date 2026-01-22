@@ -1,71 +1,50 @@
 # OpenWebUI with SageMaker vLLM Endpoint
 
-Local development/testing setup for OpenWebUI connected to your SageMaker vLLM endpoint via LiteLLM proxy.
+Local development/testing setup for OpenWebUI connected to your SageMaker vLLM endpoint via API Gateway.
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌──────────────────┐
-│  OpenWebUI  │────▶│   LiteLLM   │────▶│ SageMaker vLLM   │
-│  :49200     │     │   :49201    │     │ Endpoint         │
-└─────────────┘     └─────────────┘     └──────────────────┘
-   (OpenAI API)     (SigV4 signing)       (AWS API)
+┌─────────────┐     ┌──────────────┐     ┌────────────┐     ┌─────────────────┐
+│  OpenWebUI  │────▶│ API Gateway  │────▶│   Lambda   │────▶│ SageMaker vLLM  │
+│  :49200     │     │ (public)     │     │  (proxy)   │     │   Endpoint      │
+└─────────────┘     └──────────────┘     └────────────┘     └─────────────────┘
+   (OpenAI API)       No Auth            SigV4 signing         (vLLM)
 ```
 
-### Why LiteLLM in the middle?
+### Why this architecture?
 
-**OpenWebUI can't talk directly to SageMaker** because:
+1. **API Gateway** exposes a public HTTP endpoint (no auth for dev/testing)
+2. **Lambda** receives OpenAI-format requests and forwards them to SageMaker
+3. **Lambda uses boto3** which automatically handles AWS SigV4 signing
+4. **OpenWebUI** connects directly to API Gateway as if it were OpenAI
 
-1. **AWS SigV4 Authentication**: SageMaker endpoints require every request to be signed with [AWS Signature Version 4](https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html) - a complex signing process using your AWS credentials (access key, secret key, session token, region, timestamp). OpenWebUI only supports simple Bearer token authentication.
-
-2. **API Translation**: OpenWebUI speaks OpenAI's API format. While our vLLM endpoint is OpenAI-compatible, the request must still go through SageMaker's `invoke_endpoint` API, not a direct HTTP call.
-
-**LiteLLM solves both problems**:
-- Receives standard OpenAI API requests from OpenWebUI (with a simple API key)
-- Signs requests with AWS credentials (SigV4)
-- Routes them to the correct SageMaker endpoint
-- Returns responses in OpenAI format
-
-```
-OpenWebUI                    LiteLLM                         SageMaker
-   │                            │                                │
-   │  POST /v1/chat/completions │                                │
-   │  Authorization: Bearer sk-1234                              │
-   │ ─────────────────────────► │                                │
-   │                            │  POST /endpoints/vllm.../invocations
-   │                            │  Authorization: AWS4-HMAC-SHA256...
-   │                            │  X-Amz-Date: 20260122T...
-   │                            │  X-Amz-Security-Token: ...
-   │                            │ ─────────────────────────────► │
-   │                            │                                │
-   │                            │ ◄───────────────────────────── │
-   │ ◄───────────────────────── │                                │
-```
+**No LiteLLM needed** - the Lambda function handles the translation and AWS authentication.
 
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- AWS credentials configured (with access to SageMaker)
-- A running SageMaker vLLM endpoint (e.g., `vllm-endpoint-*`)
+- Infrastructure deployed (see `../infra/README.md`)
 
 ## Quick Start
 
 ```bash
-# 1. Ensure AWS credentials are configured
-aws sts get-caller-identity --region eu-north-1
+# 1. Deploy infrastructure first (if not done)
+cd ../infra
+./deploy.sh
 
-# 2. Run setup script (generates .env and updates config)
-chmod +x setup_env.sh
+# 2. Generate .env with API Gateway URL
+cd ../openwebui
 ./setup_env.sh
 
-# 3. Start services
+# 3. Start OpenWebUI
 docker compose up -d
 
-# 4. Open OpenWebUI
+# 4. Open browser
 open http://localhost:49200
 ```
 
-Select model `distilgpt2-sg-vllm` in the UI.
+Select the model (named after your SageMaker endpoint) in the UI.
 
 ## Understanding distilgpt2 (Base Model)
 
@@ -87,75 +66,36 @@ distilgpt2 is a **base model** (not instruction-tuned), which means:
 
 ```bash
 # List available models
-curl -s http://localhost:49201/v1/models \
-  -H "Authorization: Bearer sk-1234" | jq '.data[].id'
+curl https://YOUR-API-ID.execute-api.eu-north-1.amazonaws.com/v1/models
 
 # Test completion (statement format - works best)
-curl -s http://localhost:49201/v1/chat/completions \
-  -H "Authorization: Bearer sk-1234" \
-  -H "Content-Type: application/json" \
+curl -X POST https://YOUR-API-ID.execute-api.eu-north-1.amazonaws.com/v1/chat/completions \
+  -H 'Content-Type: application/json' \
   -d '{
-    "model": "distilgpt2-sg-vllm",
     "messages": [{"role": "user", "content": "The future of artificial intelligence will depend on"}],
     "max_tokens": 100
-  }' | jq -r '.choices[0].message.content'
-
-# Test Q&A format
-curl -s http://localhost:49201/v1/chat/completions \
-  -H "Authorization: Bearer sk-1234" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "distilgpt2-sg-vllm",
-    "messages": [{"role": "user", "content": "Q: What is photosynthesis?\nA:"}],
-    "max_tokens": 100
-  }' | jq -r '.choices[0].message.content'
+  }'
 ```
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | OpenWebUI + LiteLLM services |
-| `litellm_config.yaml` | LiteLLM proxy configuration |
-| `.env` | AWS credentials (gitignored) |
-| `setup_env.sh` | Auto-generate .env from AWS CLI |
+| `docker-compose.yml` | OpenWebUI service |
+| `.env` | API Gateway URL (gitignored) |
+| `.env.example` | Template for .env |
+| `setup_env.sh` | Auto-generate .env from CloudFormation |
+| `data/` | OpenWebUI data (SQLite, uploads, cache) |
 
-## Configuration Details
-
-### LiteLLM Config (`litellm_config.yaml`)
-
-```yaml
-model_list:
-  - model_name: distilgpt2-sg-vllm
-    litellm_params:
-      model: sagemaker/vllm-endpoint-XXXXXX  # Use 'sagemaker/' for base models
-```
-
-The model name (`distilgpt2-sg-vllm`) is what appears in OpenWebUI. You can add multiple aliases pointing to the same endpoint if needed.
-
-**Important:** Use `sagemaker/` prefix (not `sagemaker_chat/`) for base models without chat templates. The `sagemaker_chat/` prefix requires models with a tokenizer chat template.
+## Configuration
 
 ### Environment Variables (`.env`)
 
 ```bash
-AWS_ACCESS_KEY_ID=AKIA...
-AWS_SECRET_ACCESS_KEY=...
-AWS_SESSION_TOKEN=...        # Required for temporary credentials
-AWS_REGION_NAME=eu-north-1
-LITELLM_MASTER_KEY=sk-1234   # API key for LiteLLM
+OPENAI_API_BASE_URL=https://xxxxx.execute-api.eu-north-1.amazonaws.com/v1
 ```
 
-## Updating Endpoint
-
-When you redeploy the SageMaker endpoint:
-
-```bash
-# Re-run setup to detect new endpoint
-./setup_env.sh
-docker compose restart litellm
-```
-
-Or manually update the endpoint name in both `litellm_config.yaml` and `.env`.
+The setup script automatically fetches this from the CloudFormation stack output.
 
 ## Troubleshooting
 
@@ -164,52 +104,34 @@ Or manually update the endpoint name in both `litellm_config.yaml` and `.env`.
 docker compose ps
 ```
 
-### View LiteLLM logs
-```bash
-docker compose logs litellm --tail 50
-```
-
 ### View OpenWebUI logs
 ```bash
 docker compose logs openwebui --tail 50
 ```
 
-### Test LiteLLM health
+### Test API Gateway directly
 ```bash
-curl http://localhost:49201/health
+curl $(grep OPENAI_API_BASE_URL .env | cut -d= -f2)/models
 ```
 
-### AWS credentials expired
+### Infrastructure not deployed
 ```bash
-# Refresh credentials and restart
-./setup_env.sh
-docker compose restart litellm
-```
-
-### Model returns empty or random output
-- Use statement format instead of questions (see "Understanding distilgpt2" section)
-- Check LiteLLM logs for errors: `docker compose logs litellm`
-
-### Port 4001 already in use
-```bash
-# Find what's using the port
-lsof -i :49201
-# Or change the port in docker-compose.yml
+cd ../infra && ./deploy.sh
 ```
 
 ## Cleanup
 
 ```bash
-# Stop containers
+# Stop OpenWebUI
 docker compose down
 
-# Stop and remove volumes (deletes OpenWebUI data)
-docker compose down -v
+# Delete infrastructure (API Gateway + Lambda)
+cd ../infra && ./delete.sh
 ```
 
 ## Notes
 
-- **Ports**: OpenWebUI on `:49200`, LiteLLM on `:49201`
+- **Port**: OpenWebUI on `:49200`
 - **Authentication**: OpenWebUI auth is disabled (`WEBUI_AUTH=false`) for local dev
-- **Session tokens**: AWS session tokens expire (typically 1-12 hours). Re-run `setup_env.sh` when they do.
-- **Model quality**: distilgpt2 is a small 82M parameter model. For better responses, deploy a larger instruction-tuned model.
+- **API Gateway**: Public endpoint with no authentication (for dev only)
+- **Data persistence**: SQLite database in `./data/openwebui/`
