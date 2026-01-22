@@ -32,12 +32,12 @@ Parameters:
   # EC2 Configuration
   EC2InstanceType:
     Type: String
-    Default: t3a.small
+    Default: t3.small
     Description: EC2 instance type for OpenWebUI
     AllowedValues:
-      - t3a.micro
-      - t3a.small
-      - t3a.medium
+      - t3.micro
+      - t3.small
+      - t3.medium
 
   EC2KeyPair:
     Type: String
