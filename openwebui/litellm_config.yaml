@@ -1,15 +1,6 @@
 model_list:
   # SageMaker vLLM endpoint with OpenAI-compatible API
-  - model_name: distilgpt2
-    litellm_params:
-      model: sagemaker/vllm-endpoint-20260122-074720
-      aws_region_name: os.environ/AWS_REGION_NAME
-      aws_access_key_id: os.environ/AWS_ACCESS_KEY_ID
-      aws_secret_access_key: os.environ/AWS_SECRET_ACCESS_KEY
-      aws_session_token: os.environ/AWS_SESSION_TOKEN
-
-  # Alias for easier access
-  - model_name: sagemaker-vllm
+  - model_name: distilgpt2-sg-vllm
     litellm_params:
       model: sagemaker/vllm-endpoint-20260122-074720
       aws_region_name: os.environ/AWS_REGION_NAME

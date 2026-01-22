@@ -37,7 +37,7 @@ docker compose up -d
 open http://localhost:3000
 ```
 
-Select model `distilgpt2` or `sagemaker-vllm` in the UI.
+Select model `distilgpt2-sg-vllm` in the UI.
 
 ## Understanding distilgpt2 (Base Model)
 
@@ -67,7 +67,7 @@ curl -s http://localhost:4001/v1/chat/completions \
   -H "Authorization: Bearer sk-1234" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "distilgpt2",
+    "model": "distilgpt2-sg-vllm",
     "messages": [{"role": "user", "content": "The future of artificial intelligence will depend on"}],
     "max_tokens": 100
   }' | jq -r '.choices[0].message.content'
@@ -77,7 +77,7 @@ curl -s http://localhost:4001/v1/chat/completions \
   -H "Authorization: Bearer sk-1234" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "distilgpt2",
+    "model": "distilgpt2-sg-vllm",
     "messages": [{"role": "user", "content": "Q: What is photosynthesis?\nA:"}],
     "max_tokens": 100
   }' | jq -r '.choices[0].message.content'
@@ -94,31 +94,16 @@ curl -s http://localhost:4001/v1/chat/completions \
 
 ## Configuration Details
 
-### Why Two Models in OpenWebUI?
-
-You'll see two models (`distilgpt2` and `sagemaker-vllm`) in OpenWebUI, but there's only **one SageMaker endpoint**. This is because LiteLLM defines **model aliases** - multiple names that route to the same backend:
-
-```yaml
-model_list:
-  - model_name: distilgpt2        # Alias 1 → same endpoint
-  - model_name: sagemaker-vllm    # Alias 2 → same endpoint
-```
-
-Both names point to the same `vllm-endpoint-*` in SageMaker. This is useful for:
-- Using friendly names (`distilgpt2`) instead of endpoint IDs
-- Testing different configurations per alias (e.g., different default parameters)
-- Migrating clients gradually when changing endpoints
-
-You can remove one alias from `litellm_config.yaml` if you prefer a single model in the UI.
-
 ### LiteLLM Config (`litellm_config.yaml`)
 
 ```yaml
 model_list:
-  - model_name: distilgpt2
+  - model_name: distilgpt2-sg-vllm
     litellm_params:
       model: sagemaker/vllm-endpoint-XXXXXX  # Use 'sagemaker/' for base models
 ```
+
+The model name (`distilgpt2-sg-vllm`) is what appears in OpenWebUI. You can add multiple aliases pointing to the same endpoint if needed.
 
 **Important:** Use `sagemaker/` prefix (not `sagemaker_chat/`) for base models without chat templates. The `sagemaker_chat/` prefix requires models with a tokenizer chat template.
 
