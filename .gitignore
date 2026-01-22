@@ -10,10 +10,6 @@ __pycache__/
 dist/
 build/
 
-# Local model artifacts
-local_model/
-*.tar.gz
-
 # AWS credentials (never commit)
 aws_credentials.yaml
 .env
@@ -23,6 +19,6 @@ aws_credentials.yaml
 .vscode/
 *.swp
 
-# OpenWebUI secrets and data
-openwebui/.env
-openwebui/data/
+# Local artifacts
+*.tar.gz
+local_model/

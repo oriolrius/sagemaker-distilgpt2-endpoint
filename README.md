@@ -1,219 +1,147 @@
-# SageMaker DistilGPT-2 Endpoint
+# SageMaker vLLM + OpenAI API + OpenWebUI
 
-[![Deploy SageMaker Endpoint](https://github.com/oriolrius/sagemaker-distilgpt2-endpoint/actions/workflows/deploy.yml/badge.svg)](https://github.com/oriolrius/sagemaker-distilgpt2-endpoint/actions/workflows/deploy.yml)
+Deploy a HuggingFace model on AWS SageMaker with vLLM, exposed via an OpenAI-compatible API, with OpenWebUI for a chat interface.
 
-Deploy and test a DistilGPT-2 language model on AWS SageMaker using GitHub Actions CI/CD.
-
-## Features
-
-- Automated deployment pipeline using GitHub Actions
-- Downloads model from Hugging Face Hub
-- Packages model with custom inference code
-- Deploys to AWS SageMaker with PyTorch container
-- Automatic endpoint testing after deployment
-- Conventional commits with commitizen
-
-## Architecture Overview
+## Architecture
 
 ```
-┌───────────────────┐
-│   Hugging Face    │
-│       Hub         │
-│  (distilgpt2)     │
-└─────────┬─────────┘
-          │ download model
-          ▼
-┌───────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│  GitHub Actions   │     │                  │     │  SageMaker Endpoint │
-│  (package model)  │────▶│  S3 Bucket       │────▶│  (ml.m5.large)      │
-│                   │     │  model.tar.gz    │     │                     │
-└───────────────────┘     └──────────────────┘     └──────────┬──────────┘
-                                                              │
-          ┌───────────────────────────────────────────────────┘
-          ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  AWS PyTorch Inference Container                                        │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐ │
-│  │ PyTorch 2.0.1   │  │ TorchServe      │  │ Your Code (from S3)    │ │
-│  │ Python 3.10     │  │ Model Server    │  │ ├── inference.py       │ │
-│  └─────────────────┘  └─────────────────┘  │ └── requirements.txt   │ │
-│                                             │     transformers==4.28 │ │
-│  Model files (from S3):                     │     safetensors        │ │
-│  ├── model.safetensors                      └─────────────────────────┘ │
-│  ├── tokenizer.json                                                     │
-│  └── config.json                                                        │
-└─────────────────────────────────────────────────────────────────────────┘
-          │
-          ▼
-┌───────────────────┐
-│  Client Request   │
-│  POST /invocations│
-│  {"inputs": "..."}│
-└───────────────────┘
+┌─────────────┐     ┌──────────────┐     ┌────────────┐     ┌─────────────────┐
+│  OpenWebUI  │────▶│ API Gateway  │────▶│   Lambda   │────▶│ SageMaker vLLM  │
+│  (EC2)      │     │ (HTTP API)   │     │  (proxy)   │     │   Endpoint      │
+└─────────────┘     └──────────────┘     └────────────┘     └─────────────────┘
+     ▲                    ▲
+     │                    │
+     └── Browser ─────────┴── API Clients (curl, Python, etc.)
 ```
+
+### Components
+
+| Component | Description |
+|-----------|-------------|
+| **SageMaker Endpoint** | Runs vLLM with your HuggingFace model on GPU |
+| **Lambda** | Proxies OpenAI-format requests to SageMaker (handles SigV4 signing) |
+| **API Gateway** | Public HTTP API (OpenAI-compatible) |
+| **EC2 + OpenWebUI** | Web-based chat interface |
+
+## Quick Start
+
+### Prerequisites
+
+- AWS CLI configured with credentials
+- VPC with a public subnet
+- GPU quota for ml.g4dn.xlarge (check Service Quotas)
+
+### Deploy
+
+```bash
+cd infra/
+
+# Find your VPC and subnet
+aws ec2 describe-vpcs --region eu-north-1 \
+  --query 'Vpcs[*].[VpcId,Tags[?Key==`Name`].Value|[0]]' --output table
+
+aws ec2 describe-subnets --region eu-north-1 \
+  --filters Name=vpc-id,Values=<vpc-id> \
+  --query 'Subnets[?MapPublicIpOnLaunch==`true`].[SubnetId,AvailabilityZone]' --output table
+
+# Deploy full stack
+./deploy-full-stack.sh \
+  --vpc-id vpc-0123456789abcdef0 \
+  --subnet-id subnet-0123456789abcdef0
+```
+
+Deployment takes ~15-20 minutes (mostly SageMaker endpoint startup).
+
+### Access
+
+After deployment:
+- **OpenWebUI**: `http://<ec2-elastic-ip>` (shown in output)
+- **API**: `https://<api-id>.execute-api.eu-north-1.amazonaws.com`
+
+### Test API
+
+```bash
+# List models
+curl https://<api-endpoint>/v1/models
+
+# Chat completion
+curl -X POST https://<api-endpoint>/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "The future of AI is"}], "max_tokens": 50}'
+```
+
+### Cleanup
+
+```bash
+cd infra/
+./delete-full-stack.sh
+```
+
+## Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--model-id` | distilgpt2 | HuggingFace model ID |
+| `--sagemaker-instance` | ml.g4dn.xlarge | GPU instance type |
+| `--ec2-instance` | t3a.small | EC2 instance for OpenWebUI |
+| `--key-pair` | - | EC2 key pair for SSH access |
+| `--stack-name` | openai-sagemaker-stack | CloudFormation stack name |
+
+### Example: Deploy a different model
+
+```bash
+./deploy-full-stack.sh \
+  --vpc-id vpc-xxx \
+  --subnet-id subnet-xxx \
+  --model-id gpt2-medium \
+  --sagemaker-instance ml.g5.xlarge
+```
+
+## Cost
+
+| Resource | Type | Cost |
+|----------|------|------|
+| SageMaker | ml.g4dn.xlarge | ~$0.74/hour |
+| EC2 | t3a.small | ~$0.02/hour |
+| API Gateway | HTTP API | ~$1/million requests |
+
+**Total**: ~$0.76/hour (~$550/month if 24/7)
+
+⚠️ **Remember to delete resources when not in use!**
+
+## Notes
+
+### Base Models vs Instruction-Tuned
+
+The default model (distilgpt2) is a **base model**:
+
+| Prompt Type | Works? |
+|-------------|--------|
+| Text completion: `"The capital of France is"` | ✅ Yes |
+| Q&A format: `"Q: What is AI?\nA:"` | ⚠️ Partial |
+| Direct questions: `"What is AI?"` | ❌ No |
+
+For chat behavior, use an instruction-tuned model like `meta-llama/Llama-2-7b-chat-hf`.
+
+### Security
+
+⚠️ This setup is for **development/testing**:
+- No API authentication
+- OpenWebUI auth disabled
+
+For production, add API Gateway authentication and enable OpenWebUI auth.
 
 ## Project Structure
 
 ```
 .
-├── .github/
-│   └── workflows/
-│       └── deploy.yml       # GitHub Actions CI/CD workflow
-├── .githooks/
-│   └── commit-msg           # Conventional commits validation
-├── code/
-│   ├── inference.py         # SageMaker inference handler
-│   └── requirements.txt     # Container dependencies
-├── scripts/
-│   ├── deploy.py            # Deployment script
-│   └── test_endpoint.py     # Endpoint testing script
-├── pyproject.toml           # Project configuration
-└── README.md
+├── infra/
+│   ├── full-stack.yaml          # CloudFormation template
+│   ├── deploy-full-stack.sh     # Deployment script
+│   ├── delete-full-stack.sh     # Cleanup script
+│   └── README.md                # Detailed documentation
+└── README.md                    # This file
 ```
-
-## Quick Start
-
-### 1. Set up GitHub Secrets
-
-Add these secrets to your repository (Settings → Secrets → Actions):
-
-| Secret | Description |
-|--------|-------------|
-| `AWS_ACCESS_KEY_ID` | AWS access key |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret key |
-| `AWS_SESSION_TOKEN` | Session token (if using temporary credentials) |
-
-### 2. Trigger Deployment
-
-The workflow triggers automatically on push to `main` when `code/` or `scripts/` change.
-
-Or trigger manually: **Actions** → **Deploy SageMaker Endpoint** → **Run workflow**
-
-### 3. Test the Endpoint
-
-```python
-import json
-import boto3
-
-runtime = boto3.client('sagemaker-runtime', region_name='eu-north-1')
-
-response = runtime.invoke_endpoint(
-    EndpointName='distilgpt2-endpoint-YYYYMMDD-HHMMSS',  # Check AWS console for name
-    ContentType='application/json',
-    Body=json.dumps({'inputs': 'The future of artificial intelligence'})
-)
-
-result = json.loads(response['Body'].read().decode())
-print(result['generated_text'])
-```
-
-## Container Requirements
-
-The PyTorch SageMaker container does NOT include HuggingFace libraries. The `code/requirements.txt` specifies:
-
-```
-transformers==4.28.0
-safetensors
-```
-
-**Version notes:**
-- `transformers==4.28.0` avoids conflicts with the container's pre-installed `huggingface_hub`
-- `safetensors` is required for loading models in `.safetensors` format
-
-## Local Development
-
-### Prerequisites
-
-```bash
-# Install dependencies
-pip install boto3 transformers torch
-
-# Configure AWS credentials
-export AWS_ACCESS_KEY_ID=...
-export AWS_SECRET_ACCESS_KEY=...
-export AWS_SESSION_TOKEN=...
-export AWS_REGION=eu-north-1
-```
-
-### Deploy Manually
-
-```bash
-# Deploy
-python scripts/deploy.py
-
-# Wait for endpoint (5-10 minutes)
-aws sagemaker wait endpoint-in-service --endpoint-name <endpoint-name>
-
-# Test
-python scripts/test_endpoint.py <endpoint-name>
-```
-
-### Conventional Commits
-
-This project uses [commitizen](https://commitizen-tools.github.io/commitizen/) for conventional commits:
-
-```bash
-# Install dev dependencies
-uv sync --group dev
-
-# Interactive commit
-uv run cz commit
-
-# Or use standard git commit with conventional format
-git commit -m "feat: add new feature"
-```
-
-## AWS Resources
-
-### Container Image (eu-north-1)
-
-```
-763104351884.dkr.ecr.eu-north-1.amazonaws.com/pytorch-inference:2.0.1-cpu-py310
-```
-
-### Model Tarball Structure
-
-```
-model.tar.gz
-├── config.json
-├── generation_config.json
-├── model.safetensors
-├── tokenizer.json
-├── tokenizer_config.json
-├── vocab.json
-├── merges.txt
-├── special_tokens_map.json
-└── code/
-    ├── inference.py
-    └── requirements.txt
-```
-
-## Troubleshooting
-
-### CloudWatch Logs
-
-```
-https://eu-north-1.console.aws.amazon.com/cloudwatch/home?region=eu-north-1#logEventViewer:group=/aws/sagemaker/Endpoints/<endpoint-name>
-```
-
-### Common Errors
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `Worker died` | Code crash during model loading | Check CloudWatch logs |
-| `ModuleNotFoundError` | Missing dependency | Add to `code/requirements.txt` |
-| `Invocation timed out` | Model loading too slow | Use larger instance |
-| `pip install failed` | Version conflicts | Pin compatible versions |
-
-## Cost Management
-
-- **Instance cost:** `ml.m5.large` ~$0.115/hour
-- **Delete unused endpoints:**
-  ```bash
-  aws sagemaker delete-endpoint --endpoint-name <name>
-  aws sagemaker delete-endpoint-config --endpoint-config-name <name>
-  aws sagemaker delete-model --model-name <name>
-  ```
 
 ## License
 
