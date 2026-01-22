@@ -147,6 +147,7 @@ sagemaker-using_model/
 ├── pyproject.toml             # Root project (commitizen config)
 ├── README.md                  # Main documentation
 ├── DEPLOYMENT_NOTES.md        # Step-by-step deployment guide
+├── SAGEMAKER_QUOTAS.md        # SageMaker instance quotas and pricing
 └── CLAUDE.md                  # This file
 ```
 
@@ -421,88 +422,24 @@ cd lambda/openai-proxy && uv run pytest -v
 
 ## SageMaker Endpoint Quotas (eu-north-1)
 
-**Account:** 753916465480 | **Region:** eu-north-1 | **Last Updated:** 2026-01-22
+**Full details:** [SAGEMAKER_QUOTAS.md](SAGEMAKER_QUOTAS.md)
 
-**Total Instances Across Active Endpoints:** 20
+**Account:** 753916465480 | **Region:** eu-north-1 | **Total Endpoint Instances:** 20
 
-### GPU Instances (Required for vLLM)
+### Available GPU Instances (Required for vLLM)
 
-| Instance Type | Quota | vCPUs | Memory | GPU | GPU Memory | Notes |
-|---------------|-------|-------|--------|-----|------------|-------|
-| ml.g4dn.xlarge | 1 | 4 | 16 GB | 1x T4 | 16 GB | **Recommended for this project** |
-| ml.g4dn.2xlarge | 1 | 8 | 32 GB | 1x T4 | 16 GB | Larger models |
+| Instance Type | Quota | Price/Hour | GPU | GPU Memory | Notes |
+|---------------|-------|------------|-----|------------|-------|
+| **ml.g4dn.xlarge** | 1 | ~$0.74 | NVIDIA T4 | 16 GB GDDR6 | **Recommended** |
+| ml.g4dn.2xlarge | 1 | ~$1.05 | NVIDIA T4 | 16 GB GDDR6 | Larger models |
 
-### CPU Instances (General Purpose)
+### Key Points
 
-| Instance Type | Quota | vCPUs | Memory | Notes |
-|---------------|-------|-------|--------|-------|
-| ml.m5.large | 4 | 2 | 8 GB | |
-| ml.m5.xlarge | 2 | 4 | 16 GB | |
-| ml.m5.2xlarge | 1 | 8 | 32 GB | |
-| ml.m5d.large | 4 | 2 | 8 GB | NVMe SSD |
-| ml.m5d.xlarge | 2 | 4 | 16 GB | NVMe SSD |
-| ml.m5d.2xlarge | 1 | 8 | 32 GB | NVMe SSD |
-| ml.m6g.large | 4 | 2 | 8 GB | Graviton2 (ARM) |
-| ml.m6g.xlarge | 2 | 4 | 16 GB | Graviton2 (ARM) |
-| ml.m6g.2xlarge | 1 | 8 | 32 GB | Graviton2 (ARM) |
-| ml.m6gd.large | 4 | 2 | 8 GB | Graviton2 + NVMe |
-| ml.m6gd.xlarge | 2 | 4 | 16 GB | Graviton2 + NVMe |
-| ml.m6gd.2xlarge | 1 | 8 | 32 GB | Graviton2 + NVMe |
+- **vLLM requires GPU** - Only `ml.g4dn.*` have quota > 0
+- **ARM not supported** - Graviton instances incompatible with DJL-LMI container
+- **Request increases** - AWS Console → Service Quotas → Amazon SageMaker
 
-### CPU Instances (Compute Optimized)
-
-| Instance Type | Quota | vCPUs | Memory | Notes |
-|---------------|-------|-------|--------|-------|
-| ml.c5.large | 4 | 2 | 4 GB | |
-| ml.c5.xlarge | 2 | 4 | 8 GB | |
-| ml.c5.2xlarge | 1 | 8 | 16 GB | |
-| ml.c5.4xlarge | 1 | 16 | 32 GB | |
-| ml.c5d.large | 4 | 2 | 4 GB | NVMe SSD |
-| ml.c5d.xlarge | 2 | 4 | 8 GB | NVMe SSD |
-| ml.c5d.2xlarge | 1 | 8 | 16 GB | NVMe SSD |
-| ml.c6g.large | 4 | 2 | 4 GB | Graviton2 (ARM) |
-| ml.c6g.xlarge | 2 | 4 | 8 GB | Graviton2 (ARM) |
-| ml.c6g.2xlarge | 1 | 8 | 16 GB | Graviton2 (ARM) |
-| ml.c6g.4xlarge | 1 | 16 | 32 GB | Graviton2 (ARM) |
-| ml.c6gd.large | 4 | 2 | 4 GB | Graviton2 + NVMe |
-| ml.c6gd.xlarge | 2 | 4 | 8 GB | Graviton2 + NVMe |
-| ml.c6gd.2xlarge | 1 | 8 | 16 GB | Graviton2 + NVMe |
-| ml.c6gn.large | 4 | 2 | 4 GB | Graviton2 + networking |
-| ml.c6gn.xlarge | 2 | 4 | 8 GB | Graviton2 + networking |
-| ml.c6gn.2xlarge | 1 | 8 | 16 GB | Graviton2 + networking |
-| ml.c7g.large | 4 | 2 | 4 GB | Graviton3 (ARM) |
-| ml.c7g.xlarge | 2 | 4 | 8 GB | Graviton3 (ARM) |
-| ml.c7g.2xlarge | 1 | 8 | 16 GB | Graviton3 (ARM) |
-| ml.c7g.4xlarge | 1 | 16 | 32 GB | Graviton3 (ARM) |
-
-### CPU Instances (Memory Optimized)
-
-| Instance Type | Quota | vCPUs | Memory | Notes |
-|---------------|-------|-------|--------|-------|
-| ml.r5.large | 1 | 2 | 16 GB | |
-| ml.r5.xlarge | 1 | 4 | 32 GB | |
-| ml.r5d.large | 1 | 2 | 16 GB | NVMe SSD |
-| ml.r5d.xlarge | 1 | 4 | 32 GB | NVMe SSD |
-| ml.r6g.large | 1 | 2 | 16 GB | Graviton2 (ARM) |
-| ml.r6g.xlarge | 1 | 4 | 32 GB | Graviton2 (ARM) |
-| ml.r6gd.large | 1 | 2 | 16 GB | Graviton2 + NVMe |
-| ml.r6gd.xlarge | 1 | 4 | 32 GB | Graviton2 + NVMe |
-
-### Burstable Instances (Development/Testing)
-
-| Instance Type | Quota | vCPUs | Memory | Notes |
-|---------------|-------|-------|--------|-------|
-| ml.t2.medium | 6 | 2 | 4 GB | Burstable |
-| ml.t2.large | 6 | 2 | 8 GB | Burstable |
-| ml.t2.xlarge | 6 | 4 | 16 GB | Burstable |
-| ml.t2.2xlarge | 6 | 8 | 32 GB | Burstable |
-
-### Key Notes
-
-- **vLLM requires GPU instances** - Only `ml.g4dn.*` instances are available with quota > 0
-- **ml.g4dn.xlarge** is the recommended default for this project (sufficient for distilgpt2 and small models)
-- **ARM instances** (Graviton) are not compatible with vLLM DJL-LMI container
-- **Request quota increase** via AWS Console → Service Quotas → Amazon SageMaker for larger instances
+See [SAGEMAKER_QUOTAS.md](SAGEMAKER_QUOTAS.md) for complete instance list, pricing, and GPU specifications.
 
 ---
 
