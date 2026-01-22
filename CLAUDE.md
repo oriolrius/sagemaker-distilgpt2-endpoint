@@ -145,9 +145,10 @@ sagemaker-using_model/
 │   └── .env.example           # Configuration template
 ├── .githooks/                  # Git hooks for commit validation
 ├── pyproject.toml             # Root project (commitizen config)
+├── docs/                      # Additional documentation
+│   └── sagemaker_quotas.md   # SageMaker instance quotas and pricing
 ├── README.md                  # Main documentation
 ├── DEPLOYMENT_NOTES.md        # Step-by-step deployment guide
-├── SAGEMAKER_QUOTAS.md        # SageMaker instance quotas and pricing
 └── CLAUDE.md                  # This file
 ```
 
@@ -422,7 +423,7 @@ cd lambda/openai-proxy && uv run pytest -v
 
 ## SageMaker Endpoint Quotas (eu-north-1)
 
-**Full details:** [SAGEMAKER_QUOTAS.md](SAGEMAKER_QUOTAS.md)
+**Full details:** [docs/sagemaker_quotas.md](docs/sagemaker_quotas.md)
 
 **Account:** 753916465480 | **Region:** eu-north-1 | **Total Endpoint Instances:** 20
 
@@ -439,7 +440,7 @@ cd lambda/openai-proxy && uv run pytest -v
 - **ARM not supported** - Graviton instances incompatible with DJL-LMI container
 - **Request increases** - AWS Console → Service Quotas → Amazon SageMaker
 
-See [SAGEMAKER_QUOTAS.md](SAGEMAKER_QUOTAS.md) for complete instance list, pricing, and GPU specifications.
+See [docs/sagemaker_quotas.md](docs/sagemaker_quotas.md) for complete instance list, pricing, and GPU specifications.
 
 ---
 
