@@ -27,3 +27,7 @@ aws_credentials.yaml
 # Local artifacts
 *.tar.gz
 local_model/
+
+# OpenWebUI data (local development)
+openwebui/data/
+openwebui/.env

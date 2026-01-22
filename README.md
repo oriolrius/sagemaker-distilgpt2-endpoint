@@ -136,44 +136,82 @@ For production, add API Gateway authentication and enable OpenWebUI auth.
 
 ```
 .
+├── scripts/                     # SageMaker deployment & testing tools
+│   ├── pyproject.toml           # Python project config (uv)
+│   ├── src/sagemaker_tools/
+│   │   ├── deploy_vllm.py       # Deploy SageMaker endpoint
+│   │   ├── test_openai_endpoint.py  # Test endpoint directly
+│   │   ├── test_api_gateway.py  # Test API Gateway
+│   │   └── cleanup.py           # Delete SageMaker resources
+│   └── README.md
 ├── lambda/
 │   └── openai-proxy/            # Lambda function source
 │       ├── pyproject.toml       # Python project config (uv)
 │       ├── src/
 │       │   ├── index.py         # Lambda entry point
-│       │   └── openai_proxy/    # Main module
-│       │       ├── __init__.py
+│       │   └── openai_proxy/
 │       │       └── handler.py   # Request handlers
-│       └── tests/               # Unit tests
-│           └── test_handler.py
+│       └── tests/
+│           └── test_handler.py  # Unit tests
+├── openwebui/                   # OpenWebUI configuration
+│   ├── docker-compose.yml       # Docker Compose config
+│   ├── setup.sh                 # Setup script
+│   └── README.md
 ├── infra/
 │   ├── full-stack.yaml          # CloudFormation template
 │   ├── deploy-full-stack.sh     # Deployment script
 │   ├── delete-full-stack.sh     # Cleanup script
-│   └── README.md                # Detailed documentation
+│   └── README.md
 └── README.md                    # This file
 ```
 
 ## Development
 
-### Lambda Function
+### Scripts (SageMaker Tools)
 
-The Lambda function is located in `lambda/openai-proxy/` with a proper Python project structure for easy development and testing.
+Standalone Python tools for deploying and testing SageMaker endpoints:
+
+```bash
+cd scripts/
+uv sync
+
+# Deploy standalone SageMaker endpoint (for development/testing)
+uv run deploy-vllm
+
+# Test endpoint directly
+uv run test-endpoint <endpoint-name>
+
+# Test API Gateway
+uv run python -m sagemaker_tools.test_api_gateway https://abc123.execute-api.eu-north-1.amazonaws.com
+
+# Cleanup
+uv run cleanup <endpoint-name>
+```
+
+### Lambda Function
 
 ```bash
 cd lambda/openai-proxy
-
-# Setup virtual environment
 uv sync --dev
 
 # Run tests
 uv run pytest
 
-# Run tests with coverage
-uv run pytest --cov=openai_proxy
-
-# Lint code
+# Lint
 uv run ruff check src/ tests/
+```
+
+### OpenWebUI (Local)
+
+Run OpenWebUI locally (without CloudFormation):
+
+```bash
+cd openwebui/
+cp .env.example .env
+# Edit .env and set OPENAI_API_BASE_URL
+
+./setup.sh
+# Or: docker-compose up -d
 ```
 
 ## License
