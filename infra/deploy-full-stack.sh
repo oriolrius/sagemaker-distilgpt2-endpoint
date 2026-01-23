@@ -13,6 +13,7 @@
 #   --model-id      HuggingFace model ID (default: distilgpt2)
 #   --key-pair      EC2 Key Pair name for SSH access
 #   --region        AWS region (default: eu-north-1)
+#   --external-sagemaker-role-arn  Use existing SageMaker role (for Domain integration)
 #
 # Prerequisites:
 #   - AWS CLI configured with credentials
@@ -30,6 +31,7 @@ KEY_PAIR=""
 VPC_ID=""
 SUBNET_ID=""
 LAMBDA_S3_BUCKET=""
+EXTERNAL_SAGEMAKER_ROLE_ARN=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -70,6 +72,10 @@ while [[ $# -gt 0 ]]; do
             LAMBDA_S3_BUCKET="$2"
             shift 2
             ;;
+        --external-sagemaker-role-arn)
+            EXTERNAL_SAGEMAKER_ROLE_ARN="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "Usage: $0 --vpc-id vpc-xxx --subnet-id subnet-xxx [options]"
             echo ""
@@ -85,6 +91,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --sagemaker-instance  SageMaker instance (default: ml.g4dn.xlarge)"
             echo "  --ec2-instance        EC2 instance (default: t3.small)"
             echo "  --lambda-s3-bucket    S3 bucket for Lambda code (auto-created if not specified)"
+            echo "  --external-sagemaker-role-arn  Use existing SageMaker role (for Domain integration)"
             exit 0
             ;;
         *)
@@ -124,6 +131,12 @@ echo "EC2 Instance:       $EC2_INSTANCE"
 echo "VPC ID:             $VPC_ID"
 echo "Subnet ID:          $SUBNET_ID"
 echo "Key Pair:           ${KEY_PAIR:-<none>}"
+if [ -n "$EXTERNAL_SAGEMAKER_ROLE_ARN" ]; then
+    echo "Integration Mode:   INTEGRATED (using external SageMaker role)"
+    echo "External Role:      $EXTERNAL_SAGEMAKER_ROLE_ARN"
+else
+    echo "Integration Mode:   STANDALONE (creating own SageMaker role)"
+fi
 echo "============================================"
 echo ""
 echo "This will create:"
@@ -232,6 +245,10 @@ PARAMS="$PARAMS ParameterKey=LambdaS3Key,ParameterValue=$LAMBDA_S3_KEY"
 
 if [ -n "$KEY_PAIR" ]; then
     PARAMS="$PARAMS ParameterKey=EC2KeyPair,ParameterValue=$KEY_PAIR"
+fi
+
+if [ -n "$EXTERNAL_SAGEMAKER_ROLE_ARN" ]; then
+    PARAMS="$PARAMS ParameterKey=ExternalSageMakerRoleArn,ParameterValue=$EXTERNAL_SAGEMAKER_ROLE_ARN"
 fi
 
 # Deploy stack
