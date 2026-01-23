@@ -197,6 +197,7 @@ uv run pytest --cov=openai_proxy --cov-report=term-missing
 |-----------|---------|-------------|
 | `HuggingFaceModelId` | distilgpt2 | Model from HuggingFace Hub |
 | `SageMakerInstanceType` | ml.g4dn.xlarge | GPU instance |
+| `ExternalSageMakerRoleArn` | (optional) | Existing SageMaker execution role ARN (for Domain integration) |
 | `EC2InstanceType` | t3.small | OpenWebUI host |
 | `VpcId` | (required) | VPC for deployment |
 | `SubnetId` | (required) | Public subnet |
@@ -211,6 +212,46 @@ OPTION_MAX_MODEL_LEN: 1024
 OPTION_TENSOR_PARALLEL_DEGREE: 1
 OPTION_GPU_MEMORY_UTILIZATION: 0.9
 ```
+
+#### SageMaker Domain Integration
+
+This stack supports two deployment modes:
+
+**Mode 1: Standalone (Default)**
+- Creates its own SageMaker execution role
+- No integration with existing SageMaker Domain
+- Use when deploying independently
+
+**Mode 2: Integrated with Existing Domain**
+- Uses an existing SageMaker execution role (e.g., from sg-finetune)
+- Endpoint appears in the same Domain/Studio environment
+- Enables unified management of training + inference
+
+**To deploy with Domain integration:**
+
+```bash
+# Get the execution role ARN from the existing Domain stack
+ROLE_ARN=$(aws cloudformation describe-stacks \
+  --stack-name sg-finetune-sagemaker-domain \
+  --query 'Stacks[0].Outputs[?OutputKey==`ExecutionRoleArn`].OutputValue' \
+  --output text)
+
+# Deploy with external role
+./deploy-full-stack.sh \
+  --vpc-id vpc-xxx \
+  --subnet-id subnet-xxx \
+  --external-sagemaker-role-arn "$ROLE_ARN"
+```
+
+**Requirements for integration:**
+- The external role must have endpoint management permissions:
+  - `sagemaker:CreateModel`, `sagemaker:DeleteModel`, `sagemaker:DescribeModel`
+  - `sagemaker:CreateEndpointConfig`, `sagemaker:DeleteEndpointConfig`, `sagemaker:DescribeEndpointConfig`
+  - `sagemaker:CreateEndpoint`, `sagemaker:DeleteEndpoint`, `sagemaker:DescribeEndpoint`, `sagemaker:UpdateEndpoint`
+  - `sagemaker:InvokeEndpoint`, `sagemaker:InvokeEndpointAsync`
+- The role must have ECR access for pulling the DJL-LMI container image
+
+**Related project:** [sg-finetune](../sg-finetune/) - SageMaker Domain with training pipeline (same execution role can be shared)
 
 ### 3. Deployment Script (`infra/deploy-full-stack.sh`)
 
