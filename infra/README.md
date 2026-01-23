@@ -1,20 +1,53 @@
 # Infrastructure
 
-CloudFormation templates for deploying the SageMaker vLLM endpoint with OpenAI-compatible API.
+CloudFormation templates for deploying a SageMaker vLLM endpoint with OpenAI-compatible API.
 
-## Full Stack Deployment
+## Deployment Modes
 
-Deploys everything in one CloudFormation stack:
-- SageMaker vLLM endpoint
-- API Gateway + Lambda proxy
-- EC2 instance (t3.small) with OpenWebUI
-- S3 bucket for Lambda deployment artifacts
+This stack supports two deployment modes:
+
+| Mode | Use Case | SageMaker Role | Documentation |
+|------|----------|----------------|---------------|
+| **Standalone** | Independent deployment, no existing infrastructure | Created by stack | [STANDALONE.md](STANDALONE.md) |
+| **Integrated** | Deploy within existing SageMaker Domain | Uses external role | [INTEGRATED.md](INTEGRATED.md) |
+
+### Quick Comparison
+
+| Aspect | Standalone | Integrated |
+|--------|------------|------------|
+| SageMaker Domain required | No | **Yes** (must exist) |
+| SageMaker execution role | Created | Reused from Domain |
+| Visible in SageMaker Studio | No | Yes |
+| Shares resources with training | No | Yes |
+| Cleanup | Deletes everything | Keeps Domain/role |
+
+## Quick Start
+
+### Standalone (Default)
 
 ```bash
-./deploy-full-stack.sh --vpc-id vpc-xxx --subnet-id subnet-xxx
+./deploy-full-stack.sh \
+  --vpc-id vpc-xxx \
+  --subnet-id subnet-xxx
 ```
 
-### Architecture
+### Integrated (with existing SageMaker Domain)
+
+```bash
+# Get role ARN from existing Domain
+ROLE_ARN=$(aws sagemaker describe-domain \
+  --domain-id d-xxxxxxxxxx \
+  --query 'DefaultUserSettings.ExecutionRole' \
+  --output text)
+
+# Deploy with external role
+./deploy-full-stack.sh \
+  --vpc-id vpc-xxx \
+  --subnet-id subnet-xxx \
+  --external-sagemaker-role-arn "$ROLE_ARN"
+```
+
+## Architecture
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌────────────┐     ┌─────────────────┐
@@ -26,12 +59,12 @@ Deploys everything in one CloudFormation stack:
      └──────────────── Users access via browser ────────────────────┘
 ```
 
-### Prerequisites
+## Prerequisites
 
-1. **AWS CLI configured** with credentials
-2. **VPC and Subnet IDs** - Need a VPC with a public subnet
-3. **GPU quota** - ml.g4dn.xlarge requires quota (check Service Quotas)
-4. **uv** - Python package manager for Lambda packaging ([install](https://github.com/astral-sh/uv))
+1. **AWS CLI** configured with credentials
+2. **VPC with public subnet** (MapPublicIpOnLaunch=true)
+3. **GPU quota** for ml.g4dn.xlarge (check [Service Quotas](../docs/sagemaker_quotas.md))
+4. **uv** installed for Lambda packaging ([install](https://github.com/astral-sh/uv))
 
 ### Find VPC and Subnet
 
@@ -40,42 +73,35 @@ Deploys everything in one CloudFormation stack:
 aws ec2 describe-vpcs --region eu-north-1 \
   --query 'Vpcs[*].[VpcId,Tags[?Key==`Name`].Value|[0]]' --output table
 
-# List public subnets in a VPC
+# List public subnets
 aws ec2 describe-subnets --region eu-north-1 \
   --filters Name=vpc-id,Values=vpc-xxx \
   --query 'Subnets[?MapPublicIpOnLaunch==`true`].[SubnetId,AvailabilityZone]' --output table
 ```
 
-### Deploy
+## Deploy Options
 
-```bash
-./deploy-full-stack.sh \
-  --vpc-id vpc-0123456789abcdef0 \
-  --subnet-id subnet-0123456789abcdef0 \
-  --key-pair my-key  # Optional, for SSH access
-```
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--vpc-id` | (required) | VPC ID |
+| `--subnet-id` | (required) | Public subnet ID |
+| `--stack-name` | openai-sagemaker-stack | CloudFormation stack name |
+| `--model-id` | distilgpt2 | HuggingFace model ID |
+| `--sagemaker-instance` | ml.g4dn.xlarge | GPU instance type |
+| `--ec2-instance` | t3.small | EC2 instance type |
+| `--key-pair` | - | EC2 key pair for SSH |
+| `--region` | eu-north-1 | AWS region |
+| `--external-sagemaker-role-arn` | - | Use existing SageMaker role (integrated mode) |
+| `--lambda-s3-bucket` | auto-created | S3 bucket for Lambda artifacts |
 
-**Options:**
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--vpc-id` | VPC ID (required) | - |
-| `--subnet-id` | Public subnet ID (required) | - |
-| `--stack-name` | CloudFormation stack name | openai-sagemaker-stack |
-| `--model-id` | HuggingFace model | distilgpt2 |
-| `--key-pair` | EC2 key pair for SSH | - |
-| `--region` | AWS region | eu-north-1 |
-| `--sagemaker-instance` | SageMaker instance type | ml.g4dn.xlarge |
-| `--ec2-instance` | EC2 instance type | t3.small |
-| `--lambda-s3-bucket` | S3 bucket for Lambda code | Auto-created |
-
-### Outputs
+## Outputs
 
 After deployment:
 - **OpenWebUI**: `http://<elastic-ip>` (port 80)
 - **API Gateway**: `https://xxx.execute-api.region.amazonaws.com`
 - **SageMaker Endpoint**: `<stack-name>-vllm-endpoint`
 
-### Cleanup
+## Cleanup
 
 ```bash
 # Delete stack and S3 bucket
@@ -97,18 +123,21 @@ After deployment:
 
 **Total**: ~$0.76/hour (~$550/month if 24/7)
 
+See [sagemaker_quotas.md](../docs/sagemaker_quotas.md) for detailed pricing and GPU specs.
+
 ## Files
 
 | File | Description |
 |------|-------------|
-| `full-stack.yaml` | Complete stack CloudFormation |
-| `deploy-full-stack.sh` | Deploy script (packages Lambda, uploads to S3, deploys CF) |
-| `delete-full-stack.sh` | Cleanup script (deletes stack and S3 bucket) |
-| `../lambda/openai-proxy/` | Lambda function source code |
+| `full-stack.yaml` | CloudFormation template |
+| `deploy-full-stack.sh` | Deploy script |
+| `delete-full-stack.sh` | Cleanup script |
+| `STANDALONE.md` | Standalone deployment guide |
+| `INTEGRATED.md` | SageMaker Domain integration guide |
 
 ## Security Notes
 
-⚠️ **Development/Testing Only** - This setup has:
+**Development/Testing Only** - This setup has:
 - No API authentication on API Gateway
 - OpenWebUI with auth disabled
 - SSH open (restricted by CIDR parameter)
