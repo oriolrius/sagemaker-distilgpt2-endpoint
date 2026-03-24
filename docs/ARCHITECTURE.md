@@ -171,7 +171,7 @@ The diagram below shows how a chat request is transformed at each layer:
 | ECS Fargate | 0.5 vCPU + 1GB | ~$0.03 | ~$0.72 |
 | API Gateway | HTTP API | per request | ~$0.001 |
 | CloudWatch | Logs | per GB ingested | negligible |
-| **Total** | | **~$0.80/hr** | **~$19/day** |
+| **Total** | | **~$0.77/hr** | **~$18/day** |
 
 **Always delete the stack when not in use.**
 

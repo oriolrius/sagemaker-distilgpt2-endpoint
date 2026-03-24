@@ -9,7 +9,7 @@ AWS deployment stack for running HuggingFace LLMs on SageMaker with an OpenAI-co
 3. **Package manager:** `uv`, never pip.
 4. **Test first:** `cd lambda/openai-proxy && uv run pytest -v` before any deployment.
 5. **CloudFormation only:** Never create AWS resources manually.
-6. **Cleanup:** Always delete stacks when done (~$0.80/hr).
+6. **Cleanup:** Always delete stacks when done (~$0.77/hr).
 7. **Commits:** Conventional Commits, validated by `.githooks/commit-msg`.
 8. **Linting:** `uv run ruff check` and `uv run ruff format` before committing.
 

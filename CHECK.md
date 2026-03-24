@@ -22,7 +22,7 @@ uv run pytest -v
 tests/test_handler.py::TestCreateResponse::test_basic_response PASSED
 tests/test_handler.py::TestCreateResponse::test_custom_headers PASSED
 ...
-============================== 14 passed ==============================
+============================== 19 passed ==============================
 ```
 
 You can also check code quality:
