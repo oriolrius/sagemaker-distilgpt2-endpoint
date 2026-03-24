@@ -115,7 +115,7 @@ All resources deploy to **eu-west-1** (Ireland) in a single public subnet.
 
 ---
 
-## CloudFormation Resources (21)
+## CloudFormation Resources (18)
 
 | # | Logical ID | Type |
 |---|-----------|------|

@@ -103,7 +103,7 @@ cd infra/
 | Resource | Type | Cost |
 |----------|------|------|
 | SageMaker | ml.g4dn.xlarge | ~$0.74/hour |
-| EC2 | t3a.small | ~$0.02/hour |
+| EC2 | t3.small | ~$0.02/hour |
 | API Gateway | HTTP API | ~$1/million requests |
 
 **Total**: ~$0.76/hour (~$550/month if 24/7)

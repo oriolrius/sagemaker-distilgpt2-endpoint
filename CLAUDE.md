@@ -119,7 +119,7 @@ sagemaker-using_model/
 │   ├── deploy.yml             # Deploy full stack (40min timeout)
 │   └── destroy.yml            # Cleanup with "DESTROY" confirmation
 ├── infra/                      # Infrastructure as Code
-│   ├── full-stack.yaml        # CloudFormation template (23 resources)
+│   ├── full-stack.yaml        # CloudFormation template (18 resources)
 │   ├── deploy-full-stack.sh   # Deployment orchestration (316 lines)
 │   ├── delete-full-stack.sh   # Cleanup script
 │   └── README.md              # Infrastructure documentation
@@ -322,7 +322,7 @@ cd infra/
 ./deploy-full-stack.sh \
   --vpc-id vpc-xxx \
   --subnet-id subnet-xxx \
-  --ssh-key-name my-key
+  --key-pair my-key
 ```
 
 ### Deploy via GitHub Actions
