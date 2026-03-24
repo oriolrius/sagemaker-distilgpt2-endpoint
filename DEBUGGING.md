@@ -12,7 +12,7 @@ How to diagnose and resolve issues with the deployed stack. Organized by compone
 - [SageMaker Endpoint](#sagemaker-endpoint)
 - [Lambda Function](#lambda-function)
 - [API Gateway](#api-gateway)
-- [OpenWebUI (EC2)](#openwebui-ec2)
+- [OpenWebUI (ECS Fargate)](#openwebui-ecs-fargate)
 - [CloudWatch Logs Reference](#cloudwatch-logs-reference)
 - [Useful AWS Console Links](#useful-aws-console-links)
 
@@ -32,7 +32,7 @@ Start here. Find your symptom and follow the pointer.
 | `curl /v1/models` returns empty or connection refused | API Gateway / Lambda | [API Gateway](#api-gateway) |
 | `curl /v1/chat/completions` returns 500 | Lambda -> SageMaker | [Lambda Returns 500](#lambda-returns-500) |
 | `curl /v1/chat/completions` returns 504 timeout | API Gateway timeout | [API Gateway Timeout](#api-gateway-timeout) |
-| OpenWebUI page does not load | EC2 / Docker | [OpenWebUI Not Loading](#openwebui-not-loading) |
+| OpenWebUI page does not load | ECS Fargate / Container | [OpenWebUI Not Loading](#openwebui-not-loading) |
 | OpenWebUI loads but shows no models | OpenWebUI config | [OpenWebUI No Models](#openwebui-shows-no-models) |
 | OpenWebUI loads but responses fail | Full chain | [OpenWebUI Responses Fail](#openwebui-responses-fail) |
 
@@ -281,7 +281,7 @@ The SageMaker execution role cannot pull the DJL-LMI container image from ECR.
 
 ### Endpoint Stuck in Creating
 
-Normal creation takes 15-20 minutes. If it exceeds 25 minutes:
+Normal creation takes ~7-10 minutes. If it exceeds 15 minutes:
 
 1. Check if logs are being produced:
 
@@ -487,76 +487,84 @@ CORS is configured at two levels:
 
 ---
 
-## OpenWebUI (EC2)
+## OpenWebUI (ECS Fargate)
 
 ### OpenWebUI Not Loading
 
-The EC2 instance takes 3-5 minutes after the stack completes to finish installing Docker and starting the container.
+The ECS Fargate task takes 3-5 minutes after the stack completes to pull the container image and start.
 
-**Step 1:** Confirm the instance is running:
+**Step 1:** Confirm the ECS task is running:
 
 ```bash
-aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=openai-sagemaker-stack-openwebui" \
+CLUSTER_ARN=$(aws ecs list-clusters --region eu-west-1 \
+  --query "clusterArns[?contains(@, 'openai-sagemaker-stack')]" --output text)
+
+aws ecs describe-tasks \
+  --cluster "$CLUSTER_ARN" \
+  --tasks $(aws ecs list-tasks --cluster "$CLUSTER_ARN" --region eu-west-1 --query 'taskArns[0]' --output text) \
   --region eu-west-1 \
-  --query 'Reservations[0].Instances[0].{State: State.Name, IP: PublicIpAddress}' \
+  --query 'tasks[0].{Status: lastStatus, Health: healthStatus, IP: containers[0].networkInterfaces[0].privateIpv4Address}' \
   --output table
 ```
 
-**Step 2:** Check if port 80 is open:
+**Step 2:** Check if port 8080 is open:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://<EC2_IP>"
+curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "http://<FARGATE_IP>:8080"
 ```
 
 - `200`: OpenWebUI is running
-- `000`: Connection refused -- Docker not started yet, or security group blocks port 80
-- `No route to host`: EC2 not reachable -- check security group and Elastic IP
+- `000`: Connection refused -- container not started yet, or security group blocks port 8080
+- `No route to host`: Fargate task not reachable -- check security group and network configuration
 
-**Step 3:** Connect to the instance and inspect:
+**Step 3:** Check container logs via CloudWatch:
 
 ```bash
-# Via SSH (if key pair was provided)
-ssh -i <your-key.pem> ec2-user@<EC2_IP>
-
-# Or via Session Manager (no key needed)
-# EC2 Console > select instance > Connect > Session Manager > Connect
+aws logs tail /ecs/openai-sagemaker-stack-openwebui \
+  --region eu-west-1 --since 30m
 ```
 
-Once connected:
+For live log streaming:
 
 ```bash
-# Check if Docker is running
-sudo systemctl status docker
-
-# Check if the container is running
-sudo docker ps
-
-# Check container logs
-sudo docker logs openwebui
-
-# Check the full setup log
-sudo cat /var/log/cloud-init-output.log
+aws logs tail /ecs/openai-sagemaker-stack-openwebui \
+  --region eu-west-1 --follow
 ```
 
 **Step 4:** Common issues found in logs:
 
 | Log / Error | Cause | Fix |
 |-------------|-------|-----|
-| `docker: command not found` | Docker install failed | Run `sudo dnf install -y docker && sudo systemctl start docker` |
-| `docker-compose: command not found` | docker-compose not installed | Run the install command from `setup.sh` manually |
-| Container exits immediately | Bad environment variable | Check `docker logs openwebui` for specifics |
-| No log file at all | UserData did not run | Check `/var/log/cloud-init.log` for errors |
+| Task stuck in `PROVISIONING` | Image pull taking long or failing | Check ECR/Docker Hub connectivity and image name |
+| Task status `STOPPED` | Container crashed or failed health check | Check CloudWatch logs and `stoppedReason` in task description |
+| Container exits immediately | Bad environment variable | Check CloudWatch logs for specifics |
+| `CannotPullContainerError` | Image pull failure | Verify the container image exists and Fargate has internet access (NAT gateway or public subnet) |
 
 ### OpenWebUI Shows No Models
 
 **Cause:** OpenWebUI cannot reach the API Gateway, or the `OPENAI_API_BASE_URL` is wrong.
 
-**Check the configured URL:**
+**Check the configured URL via CloudWatch logs:**
 
 ```bash
-# On the EC2 instance
-sudo docker exec openwebui env | grep OPENAI
+aws logs tail /ecs/openai-sagemaker-stack-openwebui \
+  --region eu-west-1 --since 10m \
+  --filter-pattern "OPENAI"
+```
+
+Alternatively, check the ECS task definition environment variables:
+
+```bash
+TASK_DEF=$(aws ecs describe-services \
+  --cluster "$CLUSTER_ARN" \
+  --services openai-sagemaker-stack-openwebui \
+  --region eu-west-1 \
+  --query 'services[0].taskDefinition' --output text)
+
+aws ecs describe-task-definition \
+  --task-definition "$TASK_DEF" \
+  --region eu-west-1 \
+  --query 'taskDefinition.containerDefinitions[0].environment' --output table
 ```
 
 **Expected:**
@@ -564,25 +572,24 @@ sudo docker exec openwebui env | grep OPENAI
 OPENAI_API_BASE_URL=https://abc123.execute-api.eu-west-1.amazonaws.com/v1
 ```
 
-Note the `/v1` suffix -- the `docker-compose.yml` appends it automatically.
+Note the `/v1` suffix -- the task definition appends it automatically.
 
-**Test from the EC2 instance:**
+**Test connectivity from the Fargate task's network:**
 
 ```bash
-# On the EC2 instance
+# From your local machine (or use ECS Exec if enabled)
 curl -s https://abc123.execute-api.eu-west-1.amazonaws.com/v1/models
 ```
 
-If this fails from EC2 but works from your local machine, the EC2 security group may be blocking outbound HTTPS. Check the egress rules.
+If this fails from the Fargate task but works from your local machine, the security group may be blocking outbound HTTPS. Check the egress rules.
 
 ### OpenWebUI Responses Fail
 
 OpenWebUI loads and shows the model, but sending a message returns an error.
 
-**Check the full chain from the EC2 instance:**
+**Check the full chain:**
 
 ```bash
-# On the EC2 instance
 curl -s -X POST https://abc123.execute-api.eu-west-1.amazonaws.com/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"Hello"}],"max_tokens":20}'
@@ -591,15 +598,20 @@ curl -s -X POST https://abc123.execute-api.eu-west-1.amazonaws.com/v1/chat/compl
 If this returns an error:
 - `500`: Lambda/SageMaker problem -- see [Lambda Returns 500](#lambda-returns-500)
 - `504`: Timeout -- see [API Gateway Timeout](#api-gateway-timeout)
-- `Connection refused`: Network issue from EC2
+- `Connection refused`: Network issue from Fargate task
 
-**Restart the container** if the config was changed:
+**Restart the ECS task** if the config was changed:
 
 ```bash
-# On the EC2 instance
-cd /opt/openwebui
-sudo docker-compose down
-sudo docker-compose up -d
+CLUSTER_ARN=$(aws ecs list-clusters --region eu-west-1 \
+  --query "clusterArns[?contains(@, 'openai-sagemaker-stack')]" --output text)
+
+# Force a new deployment (restarts all tasks)
+aws ecs update-service \
+  --cluster "$CLUSTER_ARN" \
+  --service openai-sagemaker-stack-openwebui \
+  --force-new-deployment \
+  --region eu-west-1
 ```
 
 ---
@@ -614,7 +626,7 @@ All components write logs to CloudWatch. Here is where to find them.
 |-----------|-----------|-----------------|
 | SageMaker Endpoint | `/aws/sagemaker/Endpoints/<endpoint-name>` | Container stdout/stderr, model loading, inference errors |
 | Lambda Function | `/aws/lambda/<function-name>` | Request/response details, Python exceptions, timeouts |
-| EC2 UserData | Accessible via `cloud-init-output.log` on the instance | Docker install, setup script output |
+| ECS Fargate (OpenWebUI) | `/ecs/openai-sagemaker-stack-openwebui` | Container stdout/stderr, application logs |
 
 ### Tailing Logs
 
@@ -625,6 +637,10 @@ aws logs tail /aws/sagemaker/Endpoints/openai-sagemaker-stack-vllm-endpoint \
 
 # Lambda function logs
 aws logs tail /aws/lambda/openai-sagemaker-stack-openai-proxy \
+  --region eu-west-1 --follow
+
+# ECS Fargate (OpenWebUI) logs
+aws logs tail /ecs/openai-sagemaker-stack-openwebui \
   --region eu-west-1 --follow
 
 # Lambda errors only
@@ -669,6 +685,6 @@ All links target `eu-west-1` (Ireland). Replace the region if deploying elsewher
 | SageMaker Endpoints | [eu-west-1.console.aws.amazon.com/sagemaker/home?region=eu-west-1#/endpoints](https://eu-west-1.console.aws.amazon.com/sagemaker/home?region=eu-west-1#/endpoints) |
 | Lambda Functions | [eu-west-1.console.aws.amazon.com/lambda/home?region=eu-west-1#/functions](https://eu-west-1.console.aws.amazon.com/lambda/home?region=eu-west-1#/functions) |
 | API Gateway APIs | [eu-west-1.console.aws.amazon.com/apigateway/home?region=eu-west-1#/apis](https://eu-west-1.console.aws.amazon.com/apigateway/home?region=eu-west-1#/apis) |
-| EC2 Instances | [eu-west-1.console.aws.amazon.com/ec2/home?region=eu-west-1#Instances](https://eu-west-1.console.aws.amazon.com/ec2/home?region=eu-west-1#Instances) |
+| ECS Console | [eu-west-1.console.aws.amazon.com/ecs/v2/clusters?region=eu-west-1](https://eu-west-1.console.aws.amazon.com/ecs/v2/clusters?region=eu-west-1) |
 | CloudWatch Log Groups | [eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#logsV2:log-groups](https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#logsV2:log-groups) |
 | Service Quotas (SageMaker) | [eu-west-1.console.aws.amazon.com/servicequotas/home/services/sagemaker/quotas](https://eu-west-1.console.aws.amazon.com/servicequotas/home/services/sagemaker/quotas) |

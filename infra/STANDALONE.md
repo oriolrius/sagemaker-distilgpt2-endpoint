@@ -13,10 +13,12 @@ Deploy the full stack as an independent, self-contained environment. This mode c
 | **Lambda Function** | OpenAI API proxy |
 | **Lambda Execution Role** | IAM role for Lambda |
 | **API Gateway HTTP API** | Public API endpoint |
-| **EC2 Instance** | OpenWebUI host |
-| **EC2 Security Group** | Network rules for EC2 |
-| **EC2 IAM Role** | Instance profile for S3 access |
-| **Elastic IP** | Static public IP |
+| **ECS Cluster** | Fargate cluster for OpenWebUI |
+| **ECS Service** | Fargate service running OpenWebUI |
+| **ECS Task Definition** | Container config (0.5 vCPU / 1 GB) |
+| **ECS Security Group** | Network rules for Fargate task |
+| **ECS Task Execution Role** | IAM role for pulling images and logging |
+| **CloudWatch Log Group** | Logs for Fargate task |
 
 ## Prerequisites
 
@@ -40,8 +42,6 @@ Deploy the full stack as an independent, self-contained environment. This mode c
 | `--stack-name` | openai-sagemaker-stack | CloudFormation stack name |
 | `--model-id` | Qwen/Qwen2.5-1.5B-Instruct | HuggingFace model ID |
 | `--sagemaker-instance` | ml.g4dn.xlarge | GPU instance type |
-| `--ec2-instance` | t3.small | EC2 instance type |
-| `--key-pair` | - | EC2 key pair for SSH |
 | `--region` | eu-west-1 | AWS region |
 
 ## When to Use Standalone Mode
@@ -67,7 +67,7 @@ This deletes all resources including the SageMaker execution role.
                      │                                                         │
 ┌─────────┐         │  ┌──────────┐    ┌────────┐    ┌─────────────────────┐  │
 │ Browser │─────────┼─▶│ OpenWebUI│───▶│  API   │───▶│      Lambda         │  │
-└─────────┘         │  │  (EC2)   │    │Gateway │    │   (OpenAI Proxy)    │  │
+└─────────┘         │  │(Fargate) │    │Gateway │    │   (OpenAI Proxy)    │  │
                      │  └──────────┘    └────────┘    └──────────┬──────────┘  │
                      │                                           │             │
                      │                                           ▼             │

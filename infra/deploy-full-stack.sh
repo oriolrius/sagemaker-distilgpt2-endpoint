@@ -125,7 +125,7 @@ fi
 echo "============================================"
 echo ""
 echo "This will create:"
-echo "  - SageMaker endpoint (~15-20 min to start)"
+echo "  - SageMaker endpoint (~7-10 min to start)"
 echo "  - API Gateway + Lambda"
 echo "  - ECS Fargate service with OpenWebUI"
 echo ""
@@ -222,7 +222,7 @@ fi
 # Deploy stack
 echo ""
 echo "Deploying CloudFormation stack..."
-echo "(This will take 15-20 minutes for SageMaker endpoint)"
+echo "(This will take ~7-10 minutes for SageMaker endpoint)"
 echo ""
 
 aws cloudformation deploy \

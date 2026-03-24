@@ -2,7 +2,7 @@
 # OpenWebUI Setup Script
 #
 # This script installs Docker and starts OpenWebUI.
-# Used by CloudFormation EC2 UserData and for local/manual setup.
+# Used for local/manual setup only. Production uses ECS Fargate.
 #
 # Usage:
 #   # With API Gateway URL

@@ -25,7 +25,7 @@ jobs:
   deploy:
     name: Deploy SageMaker + API Gateway + OpenWebUI (Fargate)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
@@ -89,7 +89,7 @@ jobs:
       - name: Deploy CloudFormation stack
         run: |
           echo "Deploying CloudFormation stack: ${{ inputs.stack_name }}"
-          echo "This may take 15-20 minutes (SageMaker endpoint startup)..."
+          echo "This may take ~7-10 minutes (SageMaker endpoint startup)..."
 
           aws cloudformation deploy \
             --region "${{ secrets.AWS_REGION }}" \

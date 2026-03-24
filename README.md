@@ -7,7 +7,7 @@ Deploy a HuggingFace language model on AWS SageMaker with vLLM, exposed via an O
 ```
 ┌─────────────┐     ┌──────────────┐     ┌────────────┐     ┌─────────────────┐
 │  OpenWebUI  │────▶│ API Gateway  │────▶│   Lambda   │────▶│ SageMaker vLLM  │
-│  (EC2)      │     │ (HTTP API)   │     │  (proxy)   │     │   Endpoint      │
+│(Fargate :8080)│   │ (HTTP API)   │     │  (proxy)   │     │   Endpoint      │
 └─────────────┘     └──────────────┘     └────────────┘     └─────────────────┘
      ▲                    ▲
      │                    │
@@ -21,7 +21,7 @@ Deploy a HuggingFace language model on AWS SageMaker with vLLM, exposed via an O
 | **SageMaker Endpoint** | Runs your HuggingFace model on GPU via vLLM |
 | **Lambda** | Proxies OpenAI-format requests to SageMaker (handles SigV4 signing) |
 | **API Gateway** | Public HTTP API (OpenAI-compatible) |
-| **EC2 + OpenWebUI** | Web-based chat interface |
+| **ECS Fargate + OpenWebUI** | Web-based chat interface |
 
 ## Quick Start
 
@@ -51,12 +51,12 @@ aws ec2 describe-subnets --region eu-west-1 \
   --subnet-id subnet-0123456789abcdef0
 ```
 
-Deployment takes ~15-20 minutes (mostly SageMaker endpoint startup).
+Deployment takes ~7-10 minutes (mostly SageMaker endpoint startup).
 
 ### Access
 
 After deployment:
-- **OpenWebUI**: `http://<ec2-elastic-ip>` (shown in output)
+- **OpenWebUI**: `http://<fargate-ip>:8080` (shown in output; IP is dynamic and may change on task restart)
 - **API**: `https://<api-id>.execute-api.eu-west-1.amazonaws.com`
 
 ### Test API
@@ -84,8 +84,6 @@ cd infra/
 |-----------|---------|-------------|
 | `--model-id` | Qwen/Qwen2.5-1.5B-Instruct | HuggingFace model ID |
 | `--sagemaker-instance` | ml.g4dn.xlarge | GPU instance type |
-| `--ec2-instance` | t3.small | EC2 instance for OpenWebUI |
-| `--key-pair` | - | EC2 key pair for SSH access |
 | `--stack-name` | openai-sagemaker-stack | CloudFormation stack name |
 
 ### Example: Deploy a different model
@@ -103,10 +101,10 @@ cd infra/
 | Resource | Type | Cost |
 |----------|------|------|
 | SageMaker | ml.g4dn.xlarge | ~$0.74/hour |
-| EC2 | t3a.small | ~$0.02/hour |
+| Fargate | 0.5 vCPU/1GB | ~$0.03/hour |
 | API Gateway | HTTP API | ~$1/million requests |
 
-**Total**: ~$0.76/hour (~$550/month if 24/7)
+**Total**: ~$0.77/hour (~$555/month if 24/7)
 
 ⚠️ **Remember to delete resources when not in use!**
 

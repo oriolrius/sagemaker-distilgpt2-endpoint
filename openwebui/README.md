@@ -60,11 +60,7 @@ Data is stored in `./data/` directory:
 
 ## CloudFormation Integration
 
-The CloudFormation template (`infra/full-stack.yaml`) uses this configuration via EC2 UserData. It:
-
-1. Downloads `docker-compose.yml` and `setup.sh` to the EC2 instance
-2. Sets `OPENAI_API_BASE_URL` to the API Gateway endpoint
-3. Runs `setup.sh` to start OpenWebUI
+In production, OpenWebUI runs on ECS Fargate. The CloudFormation template (`infra/full-stack.yaml`) defines a Fargate task that pulls the OpenWebUI image directly. These local files (`docker-compose.yml`, `setup.sh`) are for local development only.
 
 ## Production Notes
 

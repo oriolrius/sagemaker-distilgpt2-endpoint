@@ -1,0 +1,113 @@
+<mxfile host="app.diagrams.net" modified="2026-03-24" agent="Claude" version="24.7.17">
+  <diagram id="deploy-pipeline" name="Deployment Pipeline">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="Deployment Pipeline" style="text;html=1;align=left;verticalAlign=middle;fontSize=22;fontStyle=1;fontColor=#232F3E;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="400" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="deploy-full-stack.sh / GitHub Actions workflow" style="text;html=1;align=left;verticalAlign=middle;fontSize=13;fontStyle=2;fontColor=#757575;" vertex="1" parent="1">
+          <mxGeometry x="40" y="55" width="400" height="25" as="geometry"/>
+        </mxCell>
+
+        <!-- Step 1: Package Lambda -->
+        <mxCell id="s1" value="&lt;b&gt;1. Package Lambda&lt;/b&gt;&lt;br&gt;&lt;br&gt;uv pip install boto3&lt;br&gt;Copy src/ to package&lt;br&gt;zip → lambda.zip&lt;br&gt;&lt;br&gt;&lt;i&gt;~30 seconds&lt;/i&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FF9900;strokeColor=#CC7A00;fontColor=#FFFFFF;fontSize=12;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="110" width="180" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- Step 2: Create S3 Bucket -->
+        <mxCell id="s2" value="&lt;b&gt;2. S3 Bucket&lt;/b&gt;&lt;br&gt;&lt;br&gt;Create if not exists&lt;br&gt;Upload lambda.zip&lt;br&gt;&lt;br&gt;&lt;i&gt;~30 seconds&lt;/i&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#4CAF50;strokeColor=#2E7D32;fontColor=#FFFFFF;fontSize=12;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="280" y="110" width="180" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- Step 3: CloudFormation Deploy -->
+        <mxCell id="s3" value="&lt;b&gt;3. CloudFormation&lt;/b&gt;&lt;br&gt;&lt;br&gt;aws cloudformation deploy&lt;br&gt;19 resources created&lt;br&gt;CAPABILITY_NAMED_IAM&lt;br&gt;&lt;br&gt;&lt;i&gt;~7-10 minutes&lt;/i&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1565C0;strokeColor=#0D47A1;fontColor=#FFFFFF;fontSize=12;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="520" y="110" width="200" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- Step 4: Get Outputs -->
+        <mxCell id="s4" value="&lt;b&gt;4. Stack Outputs&lt;/b&gt;&lt;br&gt;&lt;br&gt;API Gateway URL&lt;br&gt;ECS Cluster name&lt;br&gt;ECS Service name&lt;br&gt;SageMaker Endpoint" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#7B1FA2;strokeColor=#4A148C;fontColor=#FFFFFF;fontSize=12;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="780" y="110" width="180" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- Step 5: Discover Fargate IP -->
+        <mxCell id="s5" value="&lt;b&gt;5. Fargate IP&lt;/b&gt;&lt;br&gt;&lt;br&gt;ecs:ListTasks&lt;br&gt;ecs:DescribeTasks → ENI&lt;br&gt;ec2:DescribeNI → IP&lt;br&gt;&lt;br&gt;&lt;i&gt;Retry loop (30x10s)&lt;/i&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#E65100;strokeColor=#BF360C;fontColor=#FFFFFF;fontSize=12;verticalAlign=middle;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="110" width="180" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- Connectors -->
+        <mxCell id="c12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;curved=0;html=1;strokeWidth=2;strokeColor=#232F3E;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="s1" target="s2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c23" style="edgeStyle=orthogonalEdgeStyle;rounded=1;curved=0;html=1;strokeWidth=2;strokeColor=#232F3E;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="s2" target="s3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c34" style="edgeStyle=orthogonalEdgeStyle;rounded=1;curved=0;html=1;strokeWidth=2;strokeColor=#232F3E;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="s3" target="s4">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="c45" style="edgeStyle=orthogonalEdgeStyle;rounded=1;curved=0;html=1;strokeWidth=2;strokeColor=#232F3E;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="s4" target="s5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- CloudFormation resource creation timeline -->
+        <mxCell id="timeline_title" value="CloudFormation Resource Creation Timeline" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#232F3E;" vertex="1" parent="1">
+          <mxGeometry x="40" y="310" width="450" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- Timeline bar -->
+        <mxCell id="tl_bar" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ECEFF1;strokeColor=#B0BEC5;" vertex="1" parent="1">
+          <mxGeometry x="40" y="370" width="1160" height="10" as="geometry"/>
+        </mxCell>
+
+        <!-- Time markers -->
+        <mxCell id="t0" value="0s" style="text;html=1;align=center;verticalAlign=top;fontSize=11;fontColor=#757575;" vertex="1" parent="1">
+          <mxGeometry x="25" y="385" width="30" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="t1m" value="1 min" style="text;html=1;align=center;verticalAlign=top;fontSize=11;fontColor=#757575;" vertex="1" parent="1">
+          <mxGeometry x="135" y="385" width="50" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="t3m" value="3 min" style="text;html=1;align=center;verticalAlign=top;fontSize=11;fontColor=#757575;" vertex="1" parent="1">
+          <mxGeometry x="375" y="385" width="50" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="t7m" value="7 min" style="text;html=1;align=center;verticalAlign=top;fontSize=11;fontColor=#757575;" vertex="1" parent="1">
+          <mxGeometry x="835" y="385" width="50" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="t10m" value="~10 min" style="text;html=1;align=center;verticalAlign=top;fontSize=11;fontColor=#757575;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="385" width="60" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- Resource bars -->
+        <mxCell id="bar_iam" value="IAM Roles + ECS Cluster + SG + Logs" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#C62828;strokeColor=#B71C1C;fontColor=#FFFFFF;fontSize=11;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="120" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="bar_model" value="SageMaker Model + Task Def + Lambda" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#1565C0;strokeColor=#0D47A1;fontColor=#FFFFFF;fontSize=11;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="465" width="150" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="bar_ecs" value="ECS Service → Fargate Task Running" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FF9900;strokeColor=#CC7A00;fontColor=#FFFFFF;fontSize=11;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="100" y="510" width="300" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="bar_owui" value="OpenWebUI HTTP 200" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#4CAF50;strokeColor=#2E7D32;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="510" width="140" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="bar_sm" value="SageMaker Endpoint: Creating → InService" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#0D47A1;strokeColor=#002171;fontColor=#FFFFFF;fontSize=11;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="150" y="555" width="700" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="bar_apigw" value="API GW + Routes" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#7B1FA2;strokeColor=#4A148C;fontColor=#FFFFFF;fontSize=11;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="850" y="555" width="120" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="bar_done" value="STACK COMPLETE" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#2E7D32;strokeColor=#1B5E20;fontColor=#FFFFFF;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="850" y="600" width="350" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- Cost box -->
+        <mxCell id="cost_box" value="&lt;b&gt;Cost Estimate&lt;/b&gt;&lt;br&gt;&lt;br&gt;ml.g4dn.xlarge: ~$0.74/hr&lt;br&gt;Fargate (0.5vCPU/1GB): ~$0.03/hr&lt;br&gt;API Gateway: pay per request&lt;br&gt;&lt;b&gt;Total: ~$0.80/hr&lt;/b&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F57F17;fontColor=#E65100;fontSize=12;verticalAlign=middle;align=left;spacingLeft=15;" vertex="1" parent="1">
+          <mxGeometry x="40" y="600" width="250" height="130" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

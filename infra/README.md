@@ -52,7 +52,7 @@ ROLE_ARN=$(aws sagemaker describe-domain \
 ```
 ┌─────────────┐     ┌──────────────┐     ┌────────────┐     ┌─────────────────┐
 │  OpenWebUI  │────▶│ API Gateway  │────▶│   Lambda   │────▶│ SageMaker vLLM  │
-│  (EC2)      │     │ (HTTP API)   │     │  (proxy)   │     │   Endpoint      │
+│ (Fargate)   │     │ (HTTP API)   │     │  (proxy)   │     │   Endpoint      │
 └─────────────┘     └──────────────┘     └────────────┘     └─────────────────┘
      ▲                                                              │
      │                                                              │
@@ -88,8 +88,6 @@ aws ec2 describe-subnets --region eu-west-1 \
 | `--stack-name` | openai-sagemaker-stack | CloudFormation stack name |
 | `--model-id` | Qwen/Qwen2.5-1.5B-Instruct | HuggingFace model ID |
 | `--sagemaker-instance` | ml.g4dn.xlarge | GPU instance type |
-| `--ec2-instance` | t3.small | EC2 instance type |
-| `--key-pair` | - | EC2 key pair for SSH |
 | `--region` | eu-west-1 | AWS region |
 | `--external-sagemaker-role-arn` | - | Use existing SageMaker role (integrated mode) |
 | `--lambda-s3-bucket` | auto-created | S3 bucket for Lambda artifacts |
@@ -97,7 +95,7 @@ aws ec2 describe-subnets --region eu-west-1 \
 ## Outputs
 
 After deployment:
-- **OpenWebUI**: `http://<elastic-ip>` (port 80)
+- **OpenWebUI**: `http://<fargate-public-ip>:8080`
 - **API Gateway**: `https://xxx.execute-api.region.amazonaws.com`
 - **SageMaker Endpoint**: `<stack-name>-vllm-endpoint`
 
@@ -116,12 +114,11 @@ After deployment:
 | Resource | Type | Cost |
 |----------|------|------|
 | SageMaker | ml.g4dn.xlarge | ~$0.74/hour |
-| EC2 | t3.small | ~$0.02/hour |
+| Fargate | 0.5 vCPU / 1 GB | ~$0.03/hour |
 | API Gateway | HTTP API | ~$1/million requests |
 | Lambda | 256MB | Free tier likely covers |
-| Elastic IP | Attached | Free |
 
-**Total**: ~$0.76/hour (~$550/month if 24/7)
+**Total**: ~$0.77/hour (~$555/month if 24/7)
 
 See [sagemaker_quotas.md](../docs/sagemaker_quotas.md) for detailed pricing and GPU specs.
 
@@ -140,7 +137,6 @@ See [sagemaker_quotas.md](../docs/sagemaker_quotas.md) for detailed pricing and 
 **Development/Testing Only** - This setup has:
 - No API authentication on API Gateway
 - OpenWebUI with auth disabled
-- SSH open (restricted by CIDR parameter)
 
 For production, add:
 - API Gateway authentication (API keys, IAM, Cognito)

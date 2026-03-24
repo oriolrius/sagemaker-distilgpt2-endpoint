@@ -48,7 +48,7 @@ The existing SageMaker execution role must have these permissions:
 | SageMaker Endpoint | ✅ | |
 | Lambda Function + Role | ✅ | |
 | API Gateway | ✅ | |
-| EC2 + Security Group | ✅ | |
+| ECS Fargate (Cluster, Service, Task) | ✅ | |
 
 ## Deploy
 
@@ -158,7 +158,7 @@ aws cloudformation describe-stacks \
         │                              ▼                                      │
         │  ┌──────────┐    ┌────────┐    ┌────────┐    ┌─────────────────┐   │
         │  │ OpenWebUI│───▶│  API   │───▶│ Lambda │───▶│ SageMaker vLLM  │   │
-        │  │  (EC2)   │    │Gateway │    │        │    │    Endpoint     │   │
+        │  │(Fargate) │    │Gateway │    │        │    │    Endpoint     │   │
         │  └──────────┘    └────────┘    └────────┘    └─────────────────┘   │
         │                                                       │             │
         │                                              Uses external role     │

@@ -70,7 +70,7 @@ aws cloudformation describe-stacks \
 
 **Expected:** `CREATE_COMPLETE`
 
-To see all stack outputs (API URL, EC2 IP, endpoint name):
+To see all stack outputs (API URL, endpoint name, ECS cluster/service):
 
 ```bash
 aws cloudformation describe-stacks \
@@ -86,8 +86,7 @@ Save these values -- you will need them for the checks below:
 |--------|----------|---------|
 | `ApiGatewayEndpoint` | `API_URL` | `https://abc123.execute-api.eu-west-1.amazonaws.com` |
 | `SageMakerEndpointName` | `ENDPOINT_NAME` | `openai-sagemaker-stack-vllm-endpoint` |
-| `EC2PublicIP` | `EC2_IP` | `54.123.45.67` |
-| `OpenWebUIUrl` | `WEBUI_URL` | `http://54.123.45.67` |
+| `OpenWebUIUrl` | `WEBUI_URL` | `http://10.0.1.42:8080` |
 
 For convenience, export them:
 
@@ -101,19 +100,27 @@ API_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $
 ENDPOINT_NAME=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION \
   --query 'Stacks[0].Outputs[?OutputKey==`SageMakerEndpointName`].OutputValue' --output text)
 
-EC2_IP=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION \
-  --query 'Stacks[0].Outputs[?OutputKey==`EC2PublicIP`].OutputValue' --output text)
+# Discover the Fargate task IP
+TASK_ARN=$(aws ecs list-tasks --cluster ${STACK_NAME}-cluster --service-name ${STACK_NAME}-openwebui \
+  --region $REGION --query 'taskArns[0]' --output text)
+
+ENI_ID=$(aws ecs describe-tasks --cluster ${STACK_NAME}-cluster --tasks $TASK_ARN \
+  --region $REGION \
+  --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' --output text)
+
+FARGATE_IP=$(aws ec2 describe-network-interfaces --network-interface-ids $ENI_ID \
+  --region $REGION --query 'NetworkInterfaces[0].Association.PublicIp' --output text)
 
 echo "API_URL=$API_URL"
 echo "ENDPOINT_NAME=$ENDPOINT_NAME"
-echo "EC2_IP=$EC2_IP"
+echo "FARGATE_IP=$FARGATE_IP"
 ```
 
 ---
 
 ## Layer 4: SageMaker Endpoint
 
-The SageMaker endpoint is the slowest resource to provision (15-20 minutes). It must be `InService` before any inference works.
+The SageMaker endpoint is the slowest resource to provision (~7-10 minutes). It must be `InService` before any inference works.
 
 ### Check Status
 
@@ -136,7 +143,7 @@ aws sagemaker describe-endpoint \
 | Status | Meaning | Action |
 |--------|---------|--------|
 | `InService` | Ready | Continue to the next check |
-| `Creating` | Still provisioning | Wait (up to 20 minutes) |
+| `Creating` | Still provisioning | Wait (up to 10 minutes) |
 | `Failed` | Something broke | See [DEBUGGING.md - SageMaker Endpoint Failed](DEBUGGING.md#sagemaker-endpoint-failed) |
 | `RollingBack` | Update failed | Check CloudWatch logs |
 
@@ -308,53 +315,62 @@ uv run python -m sagemaker_tools.test_api_gateway "$API_URL"
 
 ## Layer 7: OpenWebUI
 
-The web chat interface running on EC2, connecting to the API Gateway.
+The web chat interface running as an ECS Fargate task, connecting to the API Gateway.
 
-### Check EC2 Instance Is Running
+### Check ECS Fargate Task Is Running
 
 ```bash
-aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=${STACK_NAME}-openwebui" \
+aws ecs describe-services \
+  --cluster ${STACK_NAME}-cluster \
+  --services ${STACK_NAME}-openwebui \
   --region $REGION \
-  --query 'Reservations[0].Instances[0].{State: State.Name, IP: PublicIpAddress, ID: InstanceId}' \
+  --query 'services[0].{Status: status, Running: runningCount, Desired: desiredCount}' \
   --output table
 ```
 
-**Expected:** State is `running` with a public IP.
+**Expected:** Status is `ACTIVE` with `Running` equal to `Desired` (typically 1).
 
 ### Check OpenWebUI Responds
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" "http://$EC2_IP"
+curl -s -o /dev/null -w "%{http_code}" "http://$FARGATE_IP:8080"
 ```
 
-**Expected:** `200` (the page loads). If you get `000` (connection refused), wait 3-5 minutes after stack completion -- Docker is still starting.
+**Expected:** `200` (the page loads). If you get `000` (connection refused), wait 3-5 minutes after stack completion -- the container is still starting.
 
 ### Open in Browser
 
-Navigate to `http://<EC2_IP>` in your browser. You should see the OpenWebUI chat interface.
+Navigate to `http://<FARGATE_IP>:8080` in your browser. You should see the OpenWebUI chat interface.
 
 1. The model `openai-sagemaker-stack-vllm-endpoint` appears in the model selector
 2. Type a prompt like `The most important invention is` and press Enter
 3. You get a generated response within a few seconds
 
-### Check Docker On the EC2 Instance
+### Debug via CloudWatch Logs
 
-If OpenWebUI does not load, SSH into the instance (requires a key pair) or use Session Manager:
+If OpenWebUI does not load, check the Fargate task status and container logs:
 
 ```bash
-# Via SSH
-ssh -i <your-key.pem> ec2-user@$EC2_IP
+# Check task status and stop reason (if stopped)
+aws ecs describe-tasks --cluster ${STACK_NAME}-cluster --tasks $TASK_ARN \
+  --region $REGION \
+  --query 'tasks[0].{Status: lastStatus, StopReason: stoppedReason, Health: healthStatus}'
 
-# Then check
-sudo docker ps                    # Container should be running
-sudo docker logs openwebui        # Check for errors
-cat /var/log/cloud-init-output.log | tail -30  # Check UserData setup
+# Tail the container logs from CloudWatch
+aws logs tail /ecs/${STACK_NAME}-openwebui --region $REGION --since 30m --follow
 ```
 
-Via Session Manager (no SSH key needed):
-1. Open EC2 Console > select the instance > Connect > Session Manager > Connect
-2. Run the commands above
+If the task keeps restarting, check for configuration errors:
+
+```bash
+# List recent stopped tasks
+aws ecs list-tasks --cluster ${STACK_NAME}-cluster --service-name ${STACK_NAME}-openwebui \
+  --desired-status STOPPED --region $REGION
+
+# Check events on the service for scheduling/health-check failures
+aws ecs describe-services --cluster ${STACK_NAME}-cluster --services ${STACK_NAME}-openwebui \
+  --region $REGION --query 'services[0].events[:5]'
+```
 
 ---
 
@@ -372,7 +388,8 @@ Run through this table to confirm everything works:
 | 6 | Lambda direct | `aws lambda invoke --function-name ${STACK_NAME}-openai-proxy --payload '...' /dev/stdout` | Returns 200 |
 | 7 | API GET /v1/models | `curl $API_URL/v1/models` | Model list JSON |
 | 8 | API POST /v1/chat/completions | `curl -X POST $API_URL/v1/chat/completions -d '...'` | Generated text |
-| 9 | OpenWebUI HTTP | `curl -o /dev/null -w "%{http_code}" http://$EC2_IP` | `200` |
-| 10 | OpenWebUI browser | Open `http://$EC2_IP` | Chat interface loads |
+| 9 | ECS Fargate task | `aws ecs describe-services --cluster ${STACK_NAME}-cluster --services ${STACK_NAME}-openwebui --query 'services[0].runningCount'` | `1` |
+| 10 | OpenWebUI HTTP | `curl -o /dev/null -w "%{http_code}" http://$FARGATE_IP:8080` | `200` |
+| 11 | OpenWebUI browser | Open `http://$FARGATE_IP:8080` | Chat interface loads |
 
 If any check fails, see [DEBUGGING.md](DEBUGGING.md) for diagnosis and resolution.
