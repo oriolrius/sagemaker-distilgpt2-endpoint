@@ -273,7 +273,7 @@ CannotPullContainerError: pull image manifest has been retried
 
 The SageMaker execution role cannot pull the DJL-LMI container image from ECR.
 
-**Fix:** Verify the role has ECR permissions. If using `ExternalSageMakerRoleArn`, ensure that role includes:
+**Fix:** Verify the SageMaker execution role has ECR permissions:
 - `ecr:GetAuthorizationToken`
 - `ecr:BatchCheckLayerAvailability`
 - `ecr:GetDownloadUrlForLayer`
