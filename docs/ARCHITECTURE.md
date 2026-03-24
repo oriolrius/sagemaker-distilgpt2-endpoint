@@ -181,7 +181,7 @@ The diagram below shows how a chat request is transformed at each layer:
 
 | # | Logical ID | Type | Notes |
 |---|-----------|------|-------|
-| 1 | SageMakerExecutionRole | IAM::Role | Conditional (standalone mode) |
+| 1 | SageMakerExecutionRole | IAM::Role | SageMaker + ECR access |
 | 2 | SageMakerModel | SageMaker::Model | DJL-LMI container + env vars |
 | 3 | SageMakerEndpointConfig | SageMaker::EndpointConfig | 1x ml.g4dn.xlarge |
 | 4 | SageMakerEndpoint | SageMaker::Endpoint | ~7 min to create |

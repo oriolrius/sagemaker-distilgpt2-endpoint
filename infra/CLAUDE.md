@@ -28,7 +28,6 @@ CloudFormation IaC and deployment scripts for the full stack.
 | `SageMakerInstanceType` | ml.g4dn.xlarge | no |
 | `LambdaS3Bucket` | — | yes (auto-created by script) |
 | `LambdaS3Key` | — | yes (auto-created by script) |
-| `ExternalSageMakerRoleArn` | — | no (for Domain integration) |
 
 ## Deploy
 
