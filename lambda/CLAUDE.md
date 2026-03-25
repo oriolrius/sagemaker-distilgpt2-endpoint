@@ -51,4 +51,4 @@ uv run ruff format src/ tests/                      # format
 | Variable | Set by |
 |----------|--------|
 | `SAGEMAKER_ENDPOINT_NAME` | CloudFormation |
-| `AWS_REGION_NAME` | CloudFormation |
+| `AWS_REGION` | Lambda runtime (automatic) |

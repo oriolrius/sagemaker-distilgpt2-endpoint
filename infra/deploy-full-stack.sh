@@ -2,11 +2,7 @@
 # Deploy full stack: SageMaker vLLM + API Gateway + Lambda + OpenWebUI on ECS Fargate
 #
 # Usage:
-#   ./deploy-full-stack.sh --vpc-id vpc-xxx --subnet-id subnet-xxx [options]
-#
-# Required:
-#   --vpc-id        VPC ID for Fargate tasks
-#   --subnet-id     Subnet ID for Fargate tasks (must be public)
+#   ./deploy-full-stack.sh [options]
 #
 # Optional:
 #   --stack-name    CloudFormation stack name (default: openai-sagemaker-stack)
@@ -24,8 +20,6 @@ STACK_NAME="openai-sagemaker-stack"
 MODEL_ID="Qwen/Qwen2.5-1.5B-Instruct"
 REGION="${AWS_REGION:-eu-west-1}"
 SAGEMAKER_INSTANCE="ml.g4dn.xlarge"
-VPC_ID=""
-SUBNET_ID=""
 LAMBDA_S3_BUCKET=""
 
 # Parse arguments
@@ -37,14 +31,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --model-id)
             MODEL_ID="$2"
-            shift 2
-            ;;
-        --vpc-id)
-            VPC_ID="$2"
-            shift 2
-            ;;
-        --subnet-id)
-            SUBNET_ID="$2"
             shift 2
             ;;
         --region)
@@ -60,13 +46,9 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -h|--help)
-            echo "Usage: $0 --vpc-id vpc-xxx --subnet-id subnet-xxx [options]"
+            echo "Usage: $0 [options]"
             echo ""
-            echo "Required:"
-            echo "  --vpc-id              VPC ID for Fargate tasks"
-            echo "  --subnet-id           Subnet ID (must be public subnet)"
-            echo ""
-            echo "Optional:"
+            echo "Options:"
             echo "  --stack-name          Stack name (default: openai-sagemaker-stack)"
             echo "  --model-id            HuggingFace model (default: Qwen/Qwen2.5-1.5B-Instruct)"
             echo "  --region              AWS region (default: eu-west-1)"
@@ -81,23 +63,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate required parameters
-if [ -z "$VPC_ID" ]; then
-    echo "ERROR: --vpc-id is required"
-    echo ""
-    echo "Find your VPC ID with:"
-    echo "  aws ec2 describe-vpcs --region $REGION --query 'Vpcs[*].[VpcId,Tags[?Key==\`Name\`].Value|[0]]' --output table"
-    exit 1
-fi
-
-if [ -z "$SUBNET_ID" ]; then
-    echo "ERROR: --subnet-id is required"
-    echo ""
-    echo "Find public subnets in your VPC with:"
-    echo "  aws ec2 describe-subnets --region $REGION --filters Name=vpc-id,Values=$VPC_ID --query 'Subnets[?MapPublicIpOnLaunch==\`true\`].[SubnetId,AvailabilityZone]' --output table"
-    exit 1
-fi
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "============================================"
@@ -107,16 +72,15 @@ echo "Stack Name:         $STACK_NAME"
 echo "Region:             $REGION"
 echo "Model:              $MODEL_ID"
 echo "SageMaker Instance: $SAGEMAKER_INSTANCE"
-echo "VPC ID:             $VPC_ID"
-echo "Subnet ID:          $SUBNET_ID"
 echo "============================================"
 echo ""
 echo "This will create:"
+echo "  - VPC with public subnet and internet gateway"
 echo "  - SageMaker endpoint (~7-10 min to start)"
 echo "  - API Gateway + Lambda"
 echo "  - ECS Fargate service with OpenWebUI"
 echo ""
-echo "Estimated cost: ~\$0.80/hour (mostly SageMaker GPU)"
+echo "Estimated cost: ~\$0.77/hour (mostly SageMaker GPU)"
 echo ""
 read -p "Continue? [y/N] " -n 1 -r
 echo
@@ -197,8 +161,6 @@ echo "Lambda uploaded to: s3://$LAMBDA_S3_BUCKET/$LAMBDA_S3_KEY"
 #############################################
 PARAMS="HuggingFaceModelId=$MODEL_ID"
 PARAMS="$PARAMS SageMakerInstanceType=$SAGEMAKER_INSTANCE"
-PARAMS="$PARAMS VpcId=$VPC_ID"
-PARAMS="$PARAMS SubnetId=$SUBNET_ID"
 PARAMS="$PARAMS LambdaS3Bucket=$LAMBDA_S3_BUCKET"
 PARAMS="$PARAMS LambdaS3Key=$LAMBDA_S3_KEY"
 

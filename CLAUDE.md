@@ -28,7 +28,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed diagrams.
 - **Python:** 3.11+, Ruff (120 char lines), PEP 8
 - **Commits:** Conventional Commits via Commitizen (`git config core.hooksPath .githooks`)
 - **Testing:** pytest + moto (AWS mocking)
-- **Sub-projects:** `lambda/openai-proxy/` and `scripts/` each have their own `pyproject.toml`
+- **Sub-projects:** `lambda/openai-proxy/` has its own `pyproject.toml`
 
 ## Quick Reference
 
@@ -40,7 +40,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed diagrams.
 cd lambda/openai-proxy && uv sync --dev && uv run pytest -v
 
 # Deploy
-cd infra && ./deploy-full-stack.sh --vpc-id vpc-xxx --subnet-id subnet-xxx
+cd infra && ./deploy-full-stack.sh
 
 # Cleanup
 cd infra && ./delete-full-stack.sh --stack-name openai-sagemaker-stack --region eu-west-1

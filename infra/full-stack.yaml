@@ -29,15 +29,6 @@ Parameters:
     Type: String
     Description: S3 key for Lambda deployment package
 
-  # Network Configuration
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: VPC ID for Fargate tasks
-
-  SubnetId:
-    Type: AWS::EC2::Subnet::Id
-    Description: Subnet ID for Fargate tasks (must be public subnet)
-
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -51,13 +42,68 @@ Metadata:
         Parameters:
           - LambdaS3Bucket
           - LambdaS3Key
-      - Label:
-          default: Network Configuration
-        Parameters:
-          - VpcId
-          - SubnetId
 
 Resources:
+  #############################################
+  # Network Resources (VPC, Subnet, IGW)
+  #############################################
+
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-vpc'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-igw'
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-subnet'
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-public-rt'
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
   #############################################
   # SageMaker Resources
   #############################################
@@ -162,7 +208,6 @@ Resources:
       Environment:
         Variables:
           SAGEMAKER_ENDPOINT_NAME: !Sub '${AWS::StackName}-vllm-endpoint'
-          AWS_REGION_NAME: !Ref AWS::Region
       Code:
         S3Bucket: !Ref LambdaS3Bucket
         S3Key: !Ref LambdaS3Key
@@ -293,7 +338,7 @@ Resources:
     Properties:
       GroupName: !Sub '${AWS::StackName}-openwebui-sg'
       GroupDescription: Security group for OpenWebUI Fargate task
-      VpcId: !Ref VpcId
+      VpcId: !Ref Vpc
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 8080
@@ -318,11 +363,19 @@ Resources:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
           Subnets:
-            - !Ref SubnetId
+            - !Ref PublicSubnet
           SecurityGroups:
             - !Ref OpenWebUISecurityGroup
 
 Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref Vpc
+
+  PublicSubnetId:
+    Description: Public subnet ID
+    Value: !Ref PublicSubnet
+
   SageMakerEndpointName:
     Description: SageMaker endpoint name
     Value: !Sub '${AWS::StackName}-vllm-endpoint'

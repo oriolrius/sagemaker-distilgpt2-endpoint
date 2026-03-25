@@ -200,8 +200,7 @@ aws lambda get-function-configuration \
     "Timeout": 60,
     "MemorySize": 256,
     "Env": {
-        "SAGEMAKER_ENDPOINT_NAME": "openai-sagemaker-stack-vllm-endpoint",
-        "AWS_REGION_NAME": "eu-west-1"
+        "SAGEMAKER_ENDPOINT_NAME": "openai-sagemaker-stack-vllm-endpoint"
     }
 }
 ```

@@ -28,7 +28,6 @@ Deploy a HuggingFace language model on AWS SageMaker with vLLM, exposed via an O
 ### Prerequisites
 
 - AWS CLI configured with credentials
-- VPC with a public subnet
 - GPU quota for ml.g4dn.xlarge (check Service Quotas)
 - [uv](https://github.com/astral-sh/uv) (Python package manager) for Lambda packaging
 
@@ -36,19 +35,7 @@ Deploy a HuggingFace language model on AWS SageMaker with vLLM, exposed via an O
 
 ```bash
 cd infra/
-
-# Find your VPC and subnet
-aws ec2 describe-vpcs --region eu-west-1 \
-  --query 'Vpcs[*].[VpcId,Tags[?Key==`Name`].Value|[0]]' --output table
-
-aws ec2 describe-subnets --region eu-west-1 \
-  --filters Name=vpc-id,Values=<vpc-id> \
-  --query 'Subnets[?MapPublicIpOnLaunch==`true`].[SubnetId,AvailabilityZone]' --output table
-
-# Deploy full stack
-./deploy-full-stack.sh \
-  --vpc-id vpc-0123456789abcdef0 \
-  --subnet-id subnet-0123456789abcdef0
+./deploy-full-stack.sh
 ```
 
 Deployment takes ~7-10 minutes (mostly SageMaker endpoint startup).
@@ -90,8 +77,6 @@ cd infra/
 
 ```bash
 ./deploy-full-stack.sh \
-  --vpc-id vpc-xxx \
-  --subnet-id subnet-xxx \
   --model-id TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
   --sagemaker-instance ml.g4dn.xlarge
 ```
@@ -126,14 +111,6 @@ For production, add API Gateway authentication and enable OpenWebUI auth.
 
 ```
 .
-├── scripts/                     # SageMaker deployment & testing tools
-│   ├── pyproject.toml           # Python project config (uv)
-│   ├── src/sagemaker_tools/
-│   │   ├── deploy_vllm.py       # Deploy SageMaker endpoint
-│   │   ├── test_openai_endpoint.py  # Test endpoint directly
-│   │   ├── test_api_gateway.py  # Test API Gateway
-│   │   └── cleanup.py           # Delete SageMaker resources
-│   └── README.md
 ├── lambda/
 │   └── openai-proxy/            # Lambda function source
 │       ├── pyproject.toml       # Python project config (uv)
@@ -156,27 +133,6 @@ For production, add API Gateway authentication and enable OpenWebUI auth.
 ```
 
 ## Development
-
-### Scripts (SageMaker Tools)
-
-Standalone Python tools for deploying and testing SageMaker endpoints:
-
-```bash
-cd scripts/
-uv sync
-
-# Deploy standalone SageMaker endpoint (for development/testing)
-uv run deploy-vllm
-
-# Test endpoint directly
-uv run test-endpoint <endpoint-name>
-
-# Test API Gateway
-uv run python -m sagemaker_tools.test_api_gateway https://abc123.execute-api.eu-west-1.amazonaws.com
-
-# Cleanup
-uv run cleanup <endpoint-name>
-```
 
 ### Lambda Function
 

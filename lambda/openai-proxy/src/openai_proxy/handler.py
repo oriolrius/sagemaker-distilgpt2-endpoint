@@ -110,6 +110,10 @@ def invoke_sagemaker(prompt: str, max_tokens: int = 100, temperature: float = 0.
     )
 
     result = json.loads(response["Body"].read().decode("utf-8"))
+
+    # DJL-LMI returns a list: [{"generated_text": "..."}]
+    if isinstance(result, list):
+        return result[0].get("generated_text", "") if result else ""
     return result.get("generated_text", "")
 
 

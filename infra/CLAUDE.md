@@ -6,12 +6,13 @@ CloudFormation IaC and deployment scripts for the full stack.
 
 | File | Purpose |
 |------|---------|
-| `full-stack.yaml` | CloudFormation template (19 resources) |
+| `full-stack.yaml` | CloudFormation template (26 resources) |
 | `deploy-full-stack.sh` | Package Lambda, upload to S3, deploy CF stack |
 | `delete-full-stack.sh` | Delete CF stack and S3 bucket |
 
-## CloudFormation Stack (19 resources)
+## CloudFormation Stack (26 resources)
 
+- **Network:** VPC, Subnet, InternetGateway, RouteTable, Route, SubnetRouteTableAssociation, VPCGatewayAttachment
 - **SageMaker:** Model (DJL-LMI vLLM), EndpointConfig (ml.g4dn.xlarge), Endpoint
 - **Lambda:** Function (Python 3.11), IAM Role (InvokeEndpoint), API GW Permission
 - **API Gateway:** HTTP API, Stage, Integration, 3 Routes
@@ -22,8 +23,6 @@ CloudFormation IaC and deployment scripts for the full stack.
 
 | Parameter | Default | Required |
 |-----------|---------|----------|
-| `VpcId` | — | yes |
-| `SubnetId` | — | yes (public) |
 | `HuggingFaceModelId` | Qwen/Qwen2.5-1.5B-Instruct | no |
 | `SageMakerInstanceType` | ml.g4dn.xlarge | no |
 | `LambdaS3Bucket` | — | yes (auto-created by script) |
@@ -32,7 +31,7 @@ CloudFormation IaC and deployment scripts for the full stack.
 ## Deploy
 
 ```bash
-./deploy-full-stack.sh --vpc-id vpc-xxx --subnet-id subnet-xxx
+./deploy-full-stack.sh
 ```
 
 Deployment takes ~7-10 minutes (SageMaker endpoint is the bottleneck).
